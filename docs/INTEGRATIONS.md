@@ -1,120 +1,123 @@
 # Integrations status
 
-Reviewed October 2026 against each vendor's public documentation.
-ContactOut has since been live-tested against a real (trial-tier) key --
-see below for what that confirmed and what it didn't. SignalHire and
-Gmail remain untested: built against documented request/response shapes,
-never exercised against a real account.
+## Contact resolution: no paid provider, by explicit decision
 
-## ContactOut
+ContactOut and SignalHire were removed from this app entirely (both the
+API-calling code and the credentials/config for them) at the user's
+explicit request not to pay for or depend on a contact-data vendor. For
+the record, before removal: ContactOut was live-verified on 2026-10-20
+against a real trial-tier key -- the request/auth/response-parsing all
+worked, but the account only returned ContactOut's documented placeholder
+"sample response" content, not real lookups (that needs a paid plan).
+SignalHire was built against its public docs but never tested. Both
+implementations were deleted along with this feature; they are not
+present in the codebase and are not planned to come back unless a free/
+permitted alternative appears.
 
-- **Docs reviewed:** https://api.contactout.com/ (public docs), plus the
-  `contactout.com/mcp` and `contactout.com/ai-info` pages.
-- **Auth:** API key in a `token:` header. There is no self-serve signup for
-  the API -- a key is obtained by booking a meeting with ContactOut's team.
-- **MCP integration:** `contactout.com/mcp` returned HTTP 405 to a direct
-  fetch and is clearly a marketing/JS-rendered page; `ai-info` (their
-  LLM-facing info page) does not describe an MCP server at all. Independent
-  web search found third-party mentions of "a hosted MCP server," but
-  nothing authoritative about its tool names, auth, or setup. **This was
-  not implemented** -- it would require confirming real details with
-  ContactOut directly, which this task was not able to do.
-- **Capabilities used by `app/contacts/contactout_provider.py`:**
-  - `POST /v1/people/search` -- find a person by name/company/title
-- **Credits:** per-action (1 credit per profile returned, 1 per email
-  found). No documented endpoint for checking remaining balance; the
-  provider's `usage_info()` says to check the ContactOut dashboard directly.
-- **Status: LIVE-VERIFIED on 2026-10-20, trial-tier key, sample data only.**
-  A real call against a real (but trial-tier) `CONTACTOUT_API_KEY` succeeded
-  and confirmed the auth header, endpoint, and response parsing are all
-  correct -- two assumptions from the docs were wrong and have been fixed:
-  `profiles` is a dict keyed by LinkedIn URL (not a list), and email/phone/
-  verification live under each profile's `contact_info` object, not
-  top-level `work_email`/`personal_email` fields.
-  **However**, the response body itself said *"This is a sample response.
-  To unlock full access, please book a call with our sales team"* and
-  returned placeholder data (`test@gmail.com`, `email1@example.com`,
-  `+123456789`, a literal `"Verified | Unverified"` status string) --
-  this key proves the integration's plumbing works, not that real lookups
-  work. A paid ContactOut plan is required to verify that, and hasn't been
-  tested. The `/v1/people/linkedin/work_email_status` endpoint for
-  standalone verification was not independently retested (the search
-  response already embeds verification status, so the pipeline never
-  calls it) -- treat that one method as still docs-only/unverified.
+**Recruiter contact info now comes only from:**
+1. Evidence already on the job posting itself (a named recruiter/hiring
+   manager, if the source happens to supply one -- `app/recruiter_matching.py`).
+2. Information the user explicitly provides at import time -- the
+   dashboard's `/import` form has optional recruiter name/title/email/
+   LinkedIn-profile-URL fields, stored with `provider = "user_provided"`
+   and `email_status = "unverified"` (never claimed "verified" without
+   actual third-party verification).
+3. An official company careers/talent-acquisition email found on the listing.
 
-## SignalHire
+If none of those give an email, it is left blank. `app/pipeline.py`'s
+`lookup_contacts` enforces this directly: for any job where
+`is_sample == False` (i.e. every real, non-demo job), it never calls any
+provider -- it only logs that no automated lookup is available. The only
+place `MockContactProvider` (`app/contacts/mock_provider.py`) is still
+used is for `is_sample=True` demo/test jobs, so the pipeline stays
+demonstrable without requiring a single real job to be imported first.
+`app/contacts/base.py`'s `ContactProvider` interface is kept in case a
+genuinely free/permitted provider shows up later -- dropping one in would
+be a new class + a registry entry, not a pipeline change.
 
-- **Docs reviewed:** https://www.signalhire.com/ and
-  https://docs.signalhire.com/person-api/retrieve-person.
-- **Auth:** API key in an `apikey:` header.
-- **Capability used by `app/contacts/signalhire_provider.py`:**
-  - `POST https://www.signalhire.com/api/v1/candidate/search` -- the
-    documented Person API resolves a LinkedIn URL / email / phone / UID to
-    a full profile including contacts. It does **not** take a free-text
-    name+company+title search -- that's a separate Search API this task
-    did not find full documentation for. Because of that, `search_person()`
-    only works today when a LinkedIn URL is already known (e.g. supplied
-    directly by the user for a specific posting); otherwise it returns
-    `None` rather than guessing at an undocumented endpoint shape.
-  - Supports both async (`callbackUrl`) and sync (`withoutWaterfall: true`)
-    modes; this provider uses the sync mode to fit the pipeline's simple
-    call/response flow.
-- **Credits:** returned via the `X-Credits-Left` response header, one
-  credit per successful match.
-- **Status: built, untested.** Set `SIGNALHIRE_API_KEY`, switch the
-  provider to SignalHire from the dashboard's **Providers** page, then
-  test with one known LinkedIn URL before enabling it for normal runs.
+## Free job discovery sources
 
-## Why neither is enabled by default
+### LinkedIn (human-assisted, no automation)
 
-`contacts.enabled_provider` defaults to `null` (see `app/settings.py`'s
-`DEFAULT_SETTINGS`), which means every run uses `MockContactProvider`
-(`app/contacts/mock_provider.py`) -- clearly-labeled, deterministic fake
-emails that never claim a "verified" status. The pipeline, dashboard, and
-database schema do not care which provider is active; swapping to a real
-one is a one-field change on the **Providers** page, not a code change.
+`app/linkedin_search.py` builds a LinkedIn Jobs search URL from keyword +
+filters (location, date posted, experience level, employment type,
+workplace type, Easy Apply) using LinkedIn's own public search-page query
+parameters -- the same page and parameters you'd land on by clicking
+their filter chips. The dashboard's `/discover` page shows this link for
+you to open and browse in your own, logged-in browser. Nothing in this
+app fetches, scrapes, parses, or authenticates against LinkedIn -- it
+only ever constructs a URL. When you find something worth pursuing, use
+`/import` to paste it in.
 
-## Common provider interface
+LinkedIn's `f_C` company filter needs a numeric internal company ID that
+isn't resolvable without LinkedIn API/scraping access, so "target
+company" in the discover form is folded into the keyword text instead --
+a bias, not a strict filter.
 
-`app/contacts/base.py` defines the contract every provider implements:
+### Greenhouse (public Job Board API) -- LIVE-VERIFIED 2026-10-20
 
-- `is_configured()` -- are credentials present?
-- `search_person(query)` -- name/company/title -> `ContactResult | None`
-- `enrich_profile(linkedin_url)` -- optional, profile URL -> `ContactResult`
-- `verify_email(email)` -- optional, `"valid" | "invalid" | "unknown"`
-- `usage_info()` -- credits/usage, where the provider exposes it
+`GET https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs?content=true`
+is Greenhouse's own public, unauthenticated API, built for exactly this
+kind of consumption. Verified with two real calls:
+- `stripe` board: HTTP 200, 725 real postings, confirms the schema `app/sources/greenhouse_source.py` assumes.
+- `inmobi` board: HTTP 200, real current openings including "Product
+  Analyst II" and "Product Manager - Programmatic Monetization" in
+  Bangalore -- genuinely useful for the user's actual target companies.
+
+Not every company has a Greenhouse board, and the token isn't always
+guessable: `navi`, `navitechnologies`, and `zomato` all returned 404.
+Configure real, verified tokens in the dashboard's `/sources` page; the
+default ships with `inmobi` pre-added since it's confirmed working.
+
+### Lever (public Postings API) -- LIVE-VERIFIED 2026-10-20
+
+`GET https://api.lever.co/v0/postings/{company}?mode=json` is Lever's own
+public, unauthenticated API. Verified: `palantir` returned HTTP 200 with
+real posting content; made-up slugs (`ramp`, `eventbrite`) returned 404.
+None of the user's three target companies matched a common Lever slug
+guess. No company is pre-configured by default; add a verified one in
+`/sources`.
+
+### What's NOT included, and why
+
+Generic company-career-page scraping is not implemented. Each site has
+its own markup, structure, and terms of use -- a generic scraper would be
+unreliable at best and could violate a specific site's terms at worst.
+If a specific company exposes its own public, documented job-listing API
+(not Greenhouse/Lever), a dedicated adapter can be built and verified the
+same way these two were -- real call, real response, documented before
+being trusted.
 
 ## Email sending
 
 - `app/email_module/mock_email_provider.py` -- the default. Records a
-  "sent" message id without any real delivery.
-- `app/email_module/gmail_provider.py` -- a **real implementation** of the
-  Gmail REST API (`oauth2.googleapis.com/token` for refresh, then
-  `gmail.googleapis.com/.../messages.send`), authenticated with an OAuth2
-  refresh token. No google-api-python-client dependency -- just two
-  documented REST calls via `requests`.
-  **Status: built, untested** -- no Google Cloud credentials were available
-  while building it, so it has never sent a real email. Setup:
+  "sent" message id without any real delivery. Drafts are generated
+  regardless of which provider is active -- Gmail credentials are never
+  required just to draft a message.
+- `app/email_module/gmail_provider.py` -- a real implementation of the
+  Gmail REST API (OAuth2 refresh-token flow, two documented REST calls,
+  no extra client library). **Status: built, untested** -- no Google
+  Cloud credentials were available while building it. Setup:
   1. Create a Google Cloud project, enable the Gmail API.
   2. Create an OAuth 2.0 Client ID (Desktop app type is simplest).
-  3. Complete the OAuth consent flow once with the `https://www.googleapis.com/auth/gmail.send`
-     scope (e.g. via Google's OAuth Playground) to obtain a refresh token.
-  4. Set `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN` as
-     env vars / platform secrets, and switch email provider to Gmail from
-     the dashboard's **Providers** page.
-  5. Send one real test email and confirm it arrives before relying on it
-     in `approval_required` or `rules_based` mode.
-- Outlook has no provider class yet -- would need an Azure AD app
-  registration and the Microsoft Graph `sendMail` endpoint; same
-  "build it, then test it with real credentials before trusting it" rule
-  applies.
+  3. Complete the OAuth consent flow once with the
+     `https://www.googleapis.com/auth/gmail.send` scope (e.g. via
+     Google's OAuth Playground) to obtain a refresh token.
+  4. Set `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`
+     as env vars / platform secrets, and switch the email provider to
+     Gmail from the dashboard's **Providers** page.
+  5. Send one real test email and confirm it arrives before relying on
+     it in `approval_required` or `rules_based` mode.
+- Sending (not drafting) is always approval-gated regardless of provider
+  -- see `app/actions.py`'s `approve_email` and `app/pipeline.py`'s
+  `build_and_execute_queue`.
 
 ## Application submission
 
-There is no automated ATS/job-site submission adapter in this build.
-`execution.rules_based.allowed_auto_submit_sources` is empty by design --
-rules-based auto-submission requires a site-specific adapter that has been
-checked against that site's terms of service, and none has been built or
-authorized yet. Today, "approving" an application in any mode marks it
-`approved` and expects you to submit it manually using the generated
-package, then record it with `python -m app submit-application <id>`.
+There is no automated ATS/job-site submission adapter in this build, for
+LinkedIn Easy Apply or anything else -- that would require automating a
+logged-in interface, which this app explicitly does not do. "Approving"
+an application marks it `approved` and expects you to complete submission
+yourself (through LinkedIn's own interface, or wherever the listing
+points), then record it with `python -m app submit-application <id>` or
+the dashboard's "mark as manually submitted" button.

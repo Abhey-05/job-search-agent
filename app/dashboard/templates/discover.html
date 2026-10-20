@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Discover via LinkedIn (human-assisted)</h2>
+<div class="card">
+  <p class="muted">
+    This builds a LinkedIn Jobs search link using LinkedIn's own public search
+    page and its own filter parameters -- exactly what you'd get by typing a
+    keyword and clicking their filter chips yourself. Nothing is fetched,
+    scraped, or automated here; you open the link, log into LinkedIn
+    normally, and browse the results in your own browser. When you find
+    something worth pursuing, use <a href="/import">Import a job</a> to bring
+    it into the pipeline.
+  </p>
+  <form method="get" action="/discover">
+    <label>Keyword / role</label>
+    <input type="text" name="keywords" value="{{ form.get('keywords', '') }}"
+           placeholder="e.g. Technical Product Manager">
+    <div class="row">
+      <div><label>Location</label><input type="text" name="location" value="{{ form.get('location', '') }}" placeholder="e.g. Bangalore, India"></div>
+      <div><label>Target company (folded into keywords -- see note below)</label>
+        <input type="text" name="company" value="{{ form.get('company', '') }}" placeholder="e.g. Navi"></div>
+    </div>
+    <label>Date posted</label>
+    <select name="date_posted">
+      <option value="any" {% if form.get('date_posted', 'any') == 'any' %}selected{% endif %}>Any time</option>
+      <option value="past_month" {% if form.get('date_posted') == 'past_month' %}selected{% endif %}>Past month</option>
+      <option value="past_week" {% if form.get('date_posted') == 'past_week' %}selected{% endif %}>Past week</option>
+      <option value="past_24h" {% if form.get('date_posted') == 'past_24h' %}selected{% endif %}>Past 24 hours</option>
+    </select>
+    <label>Experience level</label>
+    <div class="checks">
+      {% for key in experience_options %}
+      <label><input type="checkbox" name="experience_levels" value="{{ key }}"
+        {% if key in form.getlist('experience_levels') %}checked{% endif %}> {{ key.replace('_', ' ') }}</label>
+      {% endfor %}
+    </div>
+    <label>Employment type</label>
+    <div class="checks">
+      {% for key in employment_options %}
+      <label><input type="checkbox" name="employment_types" value="{{ key }}"
+        {% if key in form.getlist('employment_types') %}checked{% endif %}> {{ key.replace('_', ' ') }}</label>
+      {% endfor %}
+    </div>
+    <label>Workplace type</label>
+    <div class="checks">
+      {% for key in workplace_options %}
+      <label><input type="checkbox" name="workplace_types" value="{{ key }}"
+        {% if key in form.getlist('workplace_types') %}checked{% endif %}> {{ key.replace('_', ' ') }}</label>
+      {% endfor %}
+    </div>
+    <div class="checks" style="margin-top:10px;">
+      <label><input type="checkbox" name="easy_apply" {% if form.get('easy_apply') == 'on' %}checked{% endif %}> Easy Apply only</label>
+    </div>
+    <button type="submit" style="margin-top:12px;">Build search link</button>
+  </form>
+
+  {% if link %}
+  <div class="card" style="margin-top:16px; background:#f3f4f6;">
+    <strong>Your LinkedIn search link:</strong>
+    <div style="margin-top:8px;"><a href="{{ link }}" target="_blank" class="btn">Open in LinkedIn &#8599;</a></div>
+    <pre style="margin-top:8px;">{{ link }}</pre>
+  </div>
+  {% endif %}
+
+  <p class="muted" style="margin-top:14px;">
+    Note: LinkedIn doesn't expose a filter for an exact target company by
+    name in a shareable URL (it needs their internal numeric company ID),
+    so "target company" above is folded into the keyword text instead --
+    it'll bias results toward that company but won't strictly filter to it.
+  </p>
+</div>
+{% endblock %}

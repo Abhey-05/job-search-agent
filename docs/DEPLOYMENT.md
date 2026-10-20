@@ -50,9 +50,10 @@ login), and the $6-7/month Postgres cost only starts once you do.
 
 4. After the Blueprint applies, set the secret env vars it left blank
    (`sync: false` in render.yaml) in the web service's **Environment** tab:
-   `DASHBOARD_USERNAME`, `DASHBOARD_PASSWORD`, `FLASK_SECRET_KEY`, and any
-   of `CONTACTOUT_API_KEY` / `SIGNALHIRE_API_KEY` / `GMAIL_CLIENT_ID` /
-   `GMAIL_CLIENT_SECRET` / `GMAIL_REFRESH_TOKEN` you actually have.
+   `DASHBOARD_USERNAME`, `DASHBOARD_PASSWORD`, `FLASK_SECRET_KEY`, and --
+   only if you've set up Gmail sending -- `GMAIL_CLIENT_ID` /
+   `GMAIL_CLIENT_SECRET` / `GMAIL_REFRESH_TOKEN`. No contact-provider keys
+   exist to set; see docs/INTEGRATIONS.md for why.
 
 5. **Create the scheduled run** as a separate Cron Job service (New + ->
    Cron Job), same repo:
@@ -96,8 +97,9 @@ service so they share one database.
   the local dev default (`admin`/`changeme`); the app refuses to start
   with that default when `FLASK_ENV=production` (which both render.yaml
   and a typical Railway deploy set).
-- Optionally: ContactOut/SignalHire API keys, Gmail OAuth credentials --
-  the app runs fully functional with everything mocked if you skip these.
+- Optionally: Gmail OAuth credentials, if you want real sending instead
+  of mock -- the app runs fully functional with drafting-only otherwise.
+  There is no paid contact-provider to configure; see docs/INTEGRATIONS.md.
 
 ## Operational notes
 

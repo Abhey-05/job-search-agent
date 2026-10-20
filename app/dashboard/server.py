@@ -11,11 +11,10 @@ from pathlib import Path
 
 from flask import Flask, Response, redirect, render_template, request, url_for
 
-from app import actions
-from app.contacts.registry import get_contact_provider
+from app import actions, import_jobs, linkedin_search
 from app.db import get_db
 from app.email_module.registry import get_email_provider
-from app.pipeline import Runner
+from app.pipeline import Runner, RunSummary
 from app.resume_store import has_real_resume, import_resume
 from app.schedule_utils import compute_utc_cron
 from app.settings import load_settings, save_settings_section
@@ -85,11 +84,25 @@ def create_app() -> Flask:
             recruiters_with_contacts = [(r, d.get_contact_for_recruiter(r["id"])) for r in recruiters]
             application = d.get_application_for_job(job["id"])
             email_draft = d.get_email_draft_for_job(job["id"])
-            enriched.append({"job": job, "recruiters": recruiters_with_contacts,
-                              "application": application, "email_draft": email_draft})
+            enriched.append({
+                "job": job, "recruiters": recruiters_with_contacts,
+                "application": application, "email_draft": email_draft,
+                "is_imported": job["source"] == import_jobs.MANUAL_SOURCE,
+            })
         enriched.sort(key=lambda e: (e["job"]["rank_score"] or 0), reverse=True)
         d.close()
         return render_template("jobs.html", items=enriched)
+
+    @flask_app.post("/jobs/rerank")
+    def rerank_route():
+        d = db()
+        cfg = load_settings(d)
+        run_id = d.start_run(cfg.mode)
+        summary = RunSummary(run_id=run_id, mode=cfg.mode)
+        Runner(d, cfg).rerank_all(run_id, summary)
+        d.finish_run(run_id, "completed", summary.as_dict())
+        d.close()
+        return redirect(url_for("jobs"))
 
     @flask_app.get("/applications/<int:application_id>/resume.md")
     def download_resume(application_id):
@@ -273,35 +286,133 @@ def create_app() -> Flask:
     def providers_get():
         d = db()
         cfg = load_settings(d)
-        contact_provider = get_contact_provider(cfg)
         email_provider = get_email_provider(cfg)
         health = {
-            "contact_provider": contact_provider.name,
-            "contact_configured": contact_provider.is_configured(),
-            "contact_usage": contact_provider.usage_info(),
             "email_provider": email_provider.name,
             "email_configured": email_provider.is_configured(),
         }
         d.close()
-        return render_template("providers.html", contacts=cfg.contacts, email=cfg.email, health=health)
+        return render_template("providers.html", email=cfg.email, health=health)
 
     @flask_app.post("/providers")
     def providers_post():
         d = db()
-        contacts = {
-            "enabled_provider": request.form.get("enabled_provider") or None,
-            "contactout": {"api_key_env": "CONTACTOUT_API_KEY"},
-            "signalhire": {"api_key_env": "SIGNALHIRE_API_KEY"},
-        }
         email = {
             "provider": request.form.get("email_provider", "mock"),
             "from_name": request.form.get("from_name", "").strip(),
             "from_email": request.form.get("from_email", "").strip(),
         }
-        save_settings_section(d, "contacts", contacts)
         save_settings_section(d, "email", email)
         d.close()
         return redirect(url_for("providers_get"))
+
+    # ---------------------------------------------------------------- discover
+    @flask_app.get("/discover")
+    def discover_get():
+        link = None
+        if request.args.get("keywords"):
+            company = request.args.get("company", "")
+            keywords = linkedin_search.build_keywords_with_company(
+                request.args.get("keywords", ""), company
+            )
+            link = linkedin_search.build_linkedin_search_url(
+                keywords=keywords,
+                location=request.args.get("location", ""),
+                date_posted=request.args.get("date_posted", "any"),
+                experience_levels=request.args.getlist("experience_levels"),
+                employment_types=request.args.getlist("employment_types"),
+                workplace_types=request.args.getlist("workplace_types"),
+                easy_apply=request.args.get("easy_apply") == "on",
+            )
+        return render_template(
+            "discover.html", link=link, form=request.args,
+            experience_options=linkedin_search.EXPERIENCE_LEVEL_OPTIONS,
+            employment_options=linkedin_search.EMPLOYMENT_TYPE_OPTIONS,
+            workplace_options=linkedin_search.WORKPLACE_TYPE_OPTIONS,
+        )
+
+    # ------------------------------------------------------------------ import
+    @flask_app.get("/import")
+    def import_get():
+        return render_template("import.html")
+
+    @flask_app.post("/import")
+    def import_post():
+        d = db()
+        cfg = load_settings(d)
+        posting = import_jobs.build_posting(
+            title=request.form.get("title", ""), company=request.form.get("company", ""),
+            location=request.form.get("location", ""), url=request.form.get("url", ""),
+            description=request.form.get("description", ""),
+            posted_at=request.form.get("posted_at") or None,
+            recruiter_name=request.form.get("recruiter_name") or None,
+            recruiter_title=request.form.get("recruiter_title") or None,
+            is_hiring_manager=request.form.get("is_hiring_manager") == "on",
+            recruiter_email=request.form.get("recruiter_email") or None,
+            recruiter_profile_url=request.form.get("recruiter_profile_url") or None,
+            careers_email=request.form.get("careers_email") or None,
+            found_via=request.form.get("found_via", ""),
+        )
+        run_id = d.start_run(cfg.mode)
+        summary = RunSummary(run_id=run_id, mode=cfg.mode)
+        try:
+            import_jobs.import_posting(d, posting, run_id)
+            # Always reprocess pending work, not just this one posting --
+            # idempotent, so it also catches up any previously-stuck import.
+            Runner(d, cfg).process_existing(run_id, summary)
+            d.finish_run(run_id, "completed", summary.as_dict())
+        except Exception as e:
+            summary.errors.append(str(e))
+            d.finish_run(run_id, "failed", summary.as_dict())
+        d.close()
+        return redirect(url_for("jobs"))
+
+    @flask_app.post("/import/csv")
+    def import_csv_route():
+        d = db()
+        cfg = load_settings(d)
+        uploaded = request.files.get("csv_file")
+        if not uploaded or not uploaded.filename:
+            d.close()
+            return redirect(url_for("import_get"))
+
+        postings = import_jobs.parse_csv(uploaded.read().decode("utf-8", errors="replace"))
+        run_id = d.start_run(cfg.mode)
+        summary = RunSummary(run_id=run_id, mode=cfg.mode)
+        try:
+            for posting in postings:
+                result = import_jobs.import_posting(d, posting, run_id)
+                if result["is_new"] and not result["duplicate_of"]:
+                    summary.new_jobs += 1
+                elif result["duplicate_of"]:
+                    summary.duplicates += 1
+            Runner(d, cfg).process_existing(run_id, summary)
+            d.finish_run(run_id, "completed", summary.as_dict())
+        except Exception as e:
+            summary.errors.append(str(e))
+            d.finish_run(run_id, "failed", summary.as_dict())
+        d.close()
+        return redirect(url_for("jobs"))
+
+    # --------------------------------------------------------------- sources
+    @flask_app.get("/sources")
+    def sources_get():
+        d = db()
+        cfg = load_settings(d)
+        d.close()
+        return render_template("sources.html", sources=cfg.sources)
+
+    @flask_app.post("/sources")
+    def sources_post():
+        d = db()
+        sources = {
+            "enabled": _csv(request.form.get("enabled", "")),
+            "greenhouse_boards": _csv(request.form.get("greenhouse_boards", "")),
+            "lever_companies": _csv(request.form.get("lever_companies", "")),
+        }
+        save_settings_section(d, "sources", sources)
+        d.close()
+        return redirect(url_for("sources_get"))
 
     # -------------------------------------------------------------- execution
     @flask_app.get("/execution")

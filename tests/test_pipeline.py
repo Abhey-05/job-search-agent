@@ -15,6 +15,13 @@ def _make_runner(tmp_path, mode="approval_required"):
     config.raw["execution"]["mode"] = mode
     config.raw["execution"]["per_run_limits"] = {"applications": 10, "emails": 10}
     config.raw["execution"]["weekly_limits"] = {"applications": 10, "emails": 10}
+    # Pin to the static sample sources only -- the real default settings
+    # include a live Greenhouse board (verified in docs/INTEGRATIONS.md),
+    # which must never be hit from a test.
+    config.raw["sources"] = {
+        "enabled": ["sample_board_a", "sample_board_b"],
+        "greenhouse_boards": [], "lever_companies": [],
+    }
     return db, config, Runner(db, config)
 
 

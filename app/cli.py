@@ -32,6 +32,18 @@ def cmd_run(args):
     db.close()
 
 
+def cmd_rerank(args):
+    from app.pipeline import Runner, RunSummary
+    db = get_db()
+    config = load_settings(db)
+    run_id = db.start_run(config.mode)
+    summary = RunSummary(run_id=run_id, mode=config.mode)
+    Runner(db, config).rerank_all(run_id, summary)
+    db.finish_run(run_id, "completed", summary.as_dict())
+    print(json.dumps(summary.as_dict(), indent=2, default=str))
+    db.close()
+
+
 def cmd_status(args):
     db = get_db()
     config = load_settings(db)
@@ -158,6 +170,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("run", help="Run one full discovery-through-execution pass").set_defaults(func=cmd_run)
+    sub.add_parser("rerank", help="Re-score every active job against current preferences").set_defaults(func=cmd_rerank)
     sub.add_parser("status", help="Print a quick status summary").set_defaults(func=cmd_status)
 
     p_dash = sub.add_parser("dashboard", help="Start the local/production dashboard web server")

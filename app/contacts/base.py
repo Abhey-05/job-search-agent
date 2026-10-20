@@ -1,6 +1,6 @@
 """Contact-provider contract.
 
-Any provider (ContactOut, SignalHire, a future one, or the mock) implements
+Any provider (the mock, or a future permitted/free one) implements
 this interface. The pipeline only ever talks to this interface, so swapping
 providers -- or running with none configured -- never touches pipeline code.
 """

@@ -1,12 +1,16 @@
 # Job Search Agent
 
-A persistent, repeatable job-search pipeline for Abhey Garg: discover
-postings, dedupe and rank them against configured preferences, identify a
-recruiter/hiring contact, look up and verify a contact email where
-authorized, prepare a tailored application package, draft a personalized
-outreach email, and execute only what the configured approval mode
+A persistent, repeatable job-search pipeline for Abhey Garg: discover and
+import postings, dedupe and rank them against configured preferences,
+identify a recruiter/hiring contact from verifiable evidence (never a
+guess), prepare a tailored application package, draft a personalized
+outreach message, and execute only what the configured approval mode
 allows. Built to run 2-3x/week unattended in the cloud, with a dashboard
 to review and control everything, and to resume cleanly if interrupted.
+
+**No paid contact-enrichment provider is used.** ContactOut and
+SignalHire were removed by explicit request -- see `docs/INTEGRATIONS.md`
+for what that means and why.
 
 **Current state:** fully functional locally (SQLite) and cloud-ready
 (Postgres via the same code path, SQLAlchemy-backed). Not yet actually
@@ -17,30 +21,32 @@ need your own cloud account login and go-ahead on cost.
 
 ```
 app/
-  settings.py           # DB-backed profile/preferences/execution/schedule config
-  db.py                  # SQLAlchemy persistence -- same code, SQLite (local) or Postgres (prod)
-  resume_store.py        # resume ingestion (PDF/txt) + text extraction, stored in the DB
-  models.py              # JobPosting / ContactResult / etc. data containers
-  dedup.py               # cross-source duplicate detection
-  ranking.py             # configurable scoring
-  recruiter_matching.py  # evidence-based recruiter/hiring-contact identification
-  application_prep.py    # tailored resume + application package generation
-  pipeline.py            # Runner: orchestrates one full `run`, resumable stage by stage
-  actions.py             # approve/reject/pause/resume (human-in-the-loop)
-  schedule_utils.py       # days/time/timezone -> UTC cron expression + APScheduler trigger
-  cli.py                 # `python -m app <command>`
-  sources/               # job discovery adapters (interchangeable)
-  contacts/              # contact-lookup providers: mock, ContactOut, SignalHire (interchangeable)
-  email_module/          # email drafting + sending providers: mock, real Gmail (REST)
-  dashboard/             # Flask app: review, approve, run, pause, edit all settings
-wsgi.py                  # production entrypoint: `gunicorn wsgi:app`
-Procfile                 # `web: gunicorn wsgi:app`
-render.yaml              # Render Blueprint (Postgres + web service)
-.env.example             # every env var / secret the app reads, with placeholders
-tests/                   # dedup, ranking, and full-pipeline integration tests
+  settings.py             # DB-backed profile/preferences/execution/schedule config
+  db.py                    # SQLAlchemy persistence -- same code, SQLite (local) or Postgres (prod)
+  resume_store.py          # resume ingestion (PDF/txt) + text extraction, stored in the DB
+  models.py                # JobPosting / ContactResult / etc. data containers
+  linkedin_search.py       # builds a LinkedIn Jobs search URL from keyword+filters -- no scraping
+  import_jobs.py           # manual job import (single paste or CSV) -> same pipeline as discovery
+  dedup.py                 # cross-source duplicate detection (discovered AND imported jobs)
+  ranking.py               # configurable scoring
+  recruiter_matching.py    # evidence-based recruiter/hiring-contact identification
+  application_prep.py      # tailored resume + application package generation
+  pipeline.py              # Runner: orchestrates one full `run`, resumable stage by stage
+  actions.py               # approve/reject/pause/resume (human-in-the-loop)
+  schedule_utils.py        # days/time/timezone -> UTC cron expression + APScheduler trigger
+  cli.py                   # `python -m app <command>`
+  sources/                 # job discovery adapters: sample (test), Greenhouse, Lever -- all free/public
+  contacts/                # contact-resolution interface + mock (demo-data only, see below)
+  email_module/            # email drafting + sending providers: mock, real Gmail (REST)
+  dashboard/               # Flask app: discover, import, review, approve, run, pause, edit all settings
+wsgi.py                    # production entrypoint: `gunicorn wsgi:app`
+Procfile                   # `web: gunicorn wsgi:app`
+render.yaml                # Render Blueprint (Postgres + web service)
+.env.example                # every env var / secret the app reads, with placeholders
+tests/                      # dedup, ranking, pipeline, import/dedup, LinkedIn-link, Greenhouse/Lever tests
 docs/
-  INTEGRATIONS.md        # ContactOut/SignalHire/Gmail research + what's real vs. untested
-  DEPLOYMENT.md           # Render/Railway architecture decision, costs, exact deploy steps
+  INTEGRATIONS.md           # contact-resolution policy, free-source verification, Gmail setup
+  DEPLOYMENT.md             # Render/Railway architecture decision, costs, exact deploy steps
 ```
 
 ## Setup
@@ -54,10 +60,11 @@ cp .env.example .env   # then fill in what you have; everything else stays mocke
 
 No database setup is required to start: with `DATABASE_URL` unset, every
 command uses a local SQLite file at `data/app.db`. Profile, preferences,
-target companies/roles, execution mode, and schedule are **not** config
-files -- they're stored in the database itself (seeded with Abhey's real
-profile and PM-role preferences as defaults) and editable from the
-dashboard, so nothing about you is hardcoded into the business logic.
+target companies/roles, execution mode, schedule, and discovery sources
+are **not** config files -- they're stored in the database itself (seeded
+with Abhey's real profile and PM-role preferences as defaults) and
+editable from the dashboard, so nothing about you is hardcoded into the
+business logic.
 
 ## Running it
 
@@ -68,10 +75,13 @@ python -m app import-resume AbheyGarg.pdf
 # One full discovery-through-execution pass (the main command, run 2-3x/week)
 python -m app run
 
+# Re-score every active job against your current preferences (after editing them)
+python -m app rerank
+
 # Quick status line
 python -m app status
 
-# Local dashboard -- review, approve, run, pause, edit profile/preferences/schedule
+# Local dashboard
 python -m app dashboard
 # -> http://127.0.0.1:8765 (or http://localhost:8765), default dev login admin/changeme
 #    (set DASHBOARD_USERNAME/DASHBOARD_PASSWORD env vars to change this)
@@ -93,6 +103,19 @@ python -m app resume
 python -m app scheduler
 ```
 
+**The LinkedIn-assisted workflow runs entirely through the dashboard:**
+1. `/discover` -- enter a keyword/role and filters, get a LinkedIn Jobs
+   search link, open it in your own browser (nothing here touches
+   LinkedIn itself).
+2. Find something worth pursuing, then `/import` -- paste its URL and
+   details (and recruiter info only if you actually have it). It's
+   processed through the exact same pipeline as an auto-discovered job --
+   deduped, ranked, matched, a tailored resume and message draft
+   generated -- immediately, not on the next scheduled run.
+3. `/jobs` shows everything (tagged IMPORTED or AUTO-DISCOVERED), with an
+   Open Job button, a checklist for Easy Apply listings, and a copyable
+   message draft when there's no email to send to directly.
+
 In production (Render/Railway), the dashboard runs via `gunicorn wsgi:app`
 (see `Procfile`/`render.yaml`) and the scheduled run is the platform's own
 Cron Job service calling `python -m app run` directly -- see
@@ -101,54 +124,54 @@ Cron Job service calling `python -m app run` directly -- see
 ## Demonstrated so far
 
 ```bash
-.venv/bin/python -m pytest -q                      # 14 tests: dedup, ranking, full pipeline,
-                                                     # resumability, pause/approve, resume ingestion
-.venv/bin/python -m app import-resume AbheyGarg.pdf # real resume ingested, text extracted via pypdf
-.venv/bin/python -m app run                         # run 1
-.venv/bin/python -m app run                         # run 2: 0 new jobs/duplicates/drafts -- resumable
-.venv/bin/python -m app dashboard                   # auth-gated (401 without creds, 200 with),
-                                                     # profile/preferences/providers/schedule/execution
-                                                     # pages all tested via HTTP, settings round-trip
-                                                     # through a POST confirmed persisted in the DB
-.venv/bin/gunicorn wsgi:app                         # production entrypoint boots and serves correctly
+.venv/bin/python -m pytest -q    # dedup, ranking, full pipeline, resumability, pause/approve,
+                                   # resume ingestion, LinkedIn link-building, manual import,
+                                   # import-vs-discovery dedup, Greenhouse/Lever parsing (all passing)
+.venv/bin/python -m app import-resume AbheyGarg.pdf
+.venv/bin/python -m app run       # run 1, then run 2: 0 new jobs/duplicates/drafts -- resumable
+.venv/bin/python -m app dashboard # auth-gated, every new page tested live over HTTP
 ```
 
-One run against the bundled sample data (two mock sources, shaped around
-Abhey's real target companies -- Navi, InMobi, Zomato -- and PM roles):
+**Verified live against the real internet (not just unit-tested):**
+- Greenhouse's public Job Board API: real call to `inmobi`'s board
+  returned current openings including "Product Analyst II" and "Product
+  Manager - Programmatic Monetization" in Bangalore -- genuinely useful
+  for one of Abhey's three target companies, pre-configured by default.
+- Lever's public Postings API: confirmed working (200 for real company
+  slugs, 404 for invalid ones); none of the three target companies
+  matched a common slug guess, so none is pre-configured.
+- Navi and Zomato did not match common Greenhouse/Lever tokens -- they
+  likely use a different ATS; add a real token in `/sources` if you find one.
 
-- 5 postings discovered; 1 cross-source duplicate detected and linked, not re-processed
-- Ranking correctly favors the two target-company postings (Navi 0.86, InMobi 0.81) over a
-  non-target-company posting (0.63), and zeroes out one that matched `keywords_exclude: ["commission only"]`
-- 3 jobs got a recruiter/hiring-contact match (named recruiter, hiring manager, and a
-  no-name "likely team" case); the excluded job correctly got no recruiter/outreach effort at all
-- 2 got a mock contact email resolved; 1 (no individual name available) correctly got none
-- 3 tailored application packages generated, built from Abhey's actual uploaded resume text
-  (verified: extracted name/email/phone from the real PDF appear in the generated output)
-- 3 personalized recruiter emails drafted, referencing the specific job and (where known) the
-  specific recruiter by name
-- Nothing was sent or submitted -- `approval_required` mode (the default) queued everything for review
+One run against the bundled sample data (clearly `is_sample=True`, shaped
+around Abhey's real target roles/companies) still demonstrates the full
+pipeline end-to-end, including the recruiter-evidence tiers and keyword
+exclusion -- see the previous session's results, unchanged by this round
+of work except that contact resolution for sample data now goes through
+an explicitly demo-only code path (real jobs never touch it).
 
 ## What's real vs. mocked right now
 
 | Component | Status |
 |---|---|
-| Database (Postgres-compatible via SQLAlchemy), dedup, ranking, recruiter-evidence logic, pipeline orchestration, resumability, approval modes, dashboard incl. auth and all settings editing, resume ingestion | **Real, working, tested** |
-| Job discovery | **Mocked.** Two sample source adapters, shaped around real target companies/roles. Add a real one by implementing `JobSource` and registering it -- nothing else changes. |
-| Contact lookup | **Mocked by default.** Real ContactOut and SignalHire provider classes exist (built against their public docs) but are untested -- no credentials were available. See `docs/INTEGRATIONS.md`. |
+| Database, dedup, ranking, recruiter-evidence logic, pipeline orchestration, resumability, approval modes, dashboard incl. auth and all settings editing, resume ingestion | **Real, working, tested** |
+| LinkedIn-assisted discovery | **Real, by design human-assisted.** Generates real search links from LinkedIn's own public parameters; no scraping/automation exists or is planned. |
+| Manual job import (single + CSV) | **Real, tested**, including dedup against auto-discovered jobs with a different source/URL. |
+| Greenhouse / Lever discovery | **Real, live-verified.** InMobi's Greenhouse board is enabled by default; add more verified tokens in `/sources`. |
+| Contact lookup | **No paid provider exists.** Contact info comes only from posting evidence, info you provide at import time, or an official careers email -- never guessed, never auto-looked-up for a real job. |
 | Email sending | **Mocked by default.** A real Gmail REST API provider exists (OAuth refresh-token flow) but is untested -- no Google Cloud credentials were available. |
-| Application submission | **Not implemented.** No site has an authorized auto-submit adapter. Approving an application marks it `approved`; you submit manually and record it with `submit-application`. |
+| Application submission | **Not implemented**, including LinkedIn Easy Apply -- no automation of a logged-in interface exists or is planned. Approving marks `approved`; you submit manually and record it. |
 | Cloud deployment | **Not yet deployed.** Code, manifests, and local tests are all in place; actual provisioning needs your cloud account login and cost go-ahead -- see `docs/DEPLOYMENT.md`. |
 
 ## Configuration -- all editable from the dashboard, nothing hardcoded
 
+- **Discover** (`/discover`): LinkedIn keyword + filter search-link builder.
+- **Import a job** (`/import`): paste one listing, or upload a CSV of several.
+- **Sources** (`/sources`): Greenhouse board tokens / Lever company slugs to poll automatically.
 - **Profile** (`/profile`): name, contact info, headline, summary, skills, links, resume upload.
-  Seeded with Abhey's confirmed details from the brief; education/experience/projects/leadership
-  are editable via an advanced JSON field until a dedicated form is worth building.
 - **Preferences** (`/preferences`): target roles/companies, locations, seniority, boosted/excluded
-  keywords, ranking weights. Seeded with Product Manager / Technical PM / Product Analyst roles,
-  Navi/InMobi/Zomato as target companies (boost, not a hard filter), per the brief.
-- **Providers** (`/providers`): contact-lookup provider (mock/ContactOut/SignalHire) and email
-  provider (mock/Gmail), plus live integration-health status.
+  keywords, ranking weights.
+- **Providers** (`/providers`): email provider (mock/Gmail) and the contact-resolution policy note.
 - **Execution** (`/execution`): research_only / approval_required (default) / rules_based, per-run
   and weekly limits, rules-based auto-action allowlists, pause.
 - **Schedule** (`/schedule`): days/time/timezone (defaults to Mon/Wed/Fri 08:00 Asia/Kolkata), with
@@ -156,13 +179,11 @@ Abhey's real target companies -- Navi, InMobi, Zomato -- and PM roles):
 
 ## Next steps
 
-1. Review your profile/preferences on the dashboard and adjust anything that isn't quite right
-   (the summary and skills list were composed from the brief -- check they read the way you want).
-2. Decide Render vs. Railway (recommendation: Render) and walk through `docs/DEPLOYMENT.md` --
+1. Try the LinkedIn-assisted workflow: `/discover` a role, open a listing in your browser,
+   `/import` one you like, and see it flow through ranking/matching/drafting on `/jobs`.
+2. Check `/sources` -- add a Navi or Zomato token if you find one on Greenhouse or Lever.
+3. Decide Render vs. Railway (recommendation: Render) and walk through `docs/DEPLOYMENT.md` --
    I'll need your login to actually create the account/Postgres/services, and your explicit
    go-ahead once you see the real cost screen.
-3. If/when you get ContactOut or SignalHire access, set the API key and run one authorized test
-   lookup (`docs/INTEGRATIONS.md` has the exact untested assumptions to verify).
 4. If you want real email sending, set up the Gmail OAuth app and send one real test email before
    trusting it in `approval_required` mode.
-5. Add a real job source adapter when you've picked one (a company careers API, Greenhouse, etc.).

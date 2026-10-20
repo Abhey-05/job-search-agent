@@ -49,7 +49,7 @@ class ContactResult:
     email_status: str   # "verified" | "unverified" | "not_found"
     phone: Optional[str]
     confidence: float
-    source: str          # provider name, e.g. "contactout", "signalhire", "mock"
+    source: str          # provider name, e.g. "mock", "source" (from the posting itself), "user_provided"
     credits_used: int = 0
     raw: dict = field(default_factory=dict)
 

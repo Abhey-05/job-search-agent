@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>Jobs &amp; execution queue</h2>
+<form class="inline" method="post" action="/jobs/rerank" style="margin-bottom:12px;">
+  <button type="submit" class="secondary">Re-rank all against current preferences</button>
+</form>
 
 {% for item in items %}
 {% set job = item.job %}
@@ -9,9 +12,9 @@
     <div>
       <strong>{{ job['title'] }}</strong> at <strong>{{ job['company'] }}</strong>
       {% if job['is_sample'] %}<span class="tag sample">SAMPLE</span>{% endif %}
-      <div class="muted">{{ job['location'] }} &middot; source: {{ job['source'] }} &middot;
-        <a href="{{ job['url'] }}" target="_blank">original posting</a>
-      </div>
+      {% if item.is_imported %}<span class="tag">IMPORTED</span>{% else %}<span class="tag">AUTO-DISCOVERED</span>{% endif %}
+      <div class="muted">{{ job['location'] }} &middot; source: {{ job['source'] }}</div>
+      <div style="margin-top:6px;"><a href="{{ job['url'] }}" target="_blank" class="btn">Open Job &#8599;</a></div>
     </div>
     <div style="text-align:right;">
       <div><strong>{{ '%.2f'|format(job['rank_score']) if job['rank_score'] is not none else 'n/a' }}</strong></div>
@@ -34,11 +37,14 @@
         [{{ recruiter['relationship'] }}, confidence {{ '%.2f'|format(recruiter['confidence']) }}]
         {{ recruiter['name'] or recruiter['title'] or 'Unnamed' }}
         &mdash; {{ recruiter['evidence_note'] }}
+        {% if recruiter['profile_url'] %}
+          &middot; <a href="{{ recruiter['profile_url'] }}" target="_blank">Open profile</a>
+        {% endif %}
         {% if contact %}
           <br>Contact: {{ contact['email'] or '(no email found)' }}
           [{{ contact['email_status'] }}] via {{ contact['provider'] }}
         {% else %}
-          <br>No contact looked up yet.
+          <br>No email available -- no paid lookup is used; provide one at import time if you have it.
         {% endif %}
       </div>
       {% endfor %}
@@ -78,25 +84,48 @@
 
   {% if item.email_draft %}
   <div style="margin-top:10px;">
-    <strong>Email draft</strong>
-    <span class="tag">{{ item.email_draft['status'] }}</span>
-    <div class="muted">To: {{ item.email_draft['to_email'] or '(no verified recipient yet)' }}</div>
-    <details>
-      <summary class="muted">Subject: {{ item.email_draft['subject'] }}</summary>
-      <pre>{{ item.email_draft['body'] }}</pre>
-    </details>
-    {% if item.email_draft['status'] in ('pending_approval', 'draft') and item.email_draft['to_email'] %}
-    <form class="inline" method="post" action="/emails/{{ item.email_draft['id'] }}/approve">
-      <button type="submit">Approve &amp; send</button>
-    </form>
-    <form class="inline" method="post" action="/emails/{{ item.email_draft['id'] }}/reject">
-      <button type="submit" class="secondary">Reject</button>
-    </form>
+    {% if item.email_draft['to_email'] %}
+      <strong>Email draft</strong>
+      <span class="tag">{{ item.email_draft['status'] }}</span>
+      <div class="muted">To: {{ item.email_draft['to_email'] }}</div>
+      <details>
+        <summary class="muted">Subject: {{ item.email_draft['subject'] }}</summary>
+        <pre>{{ item.email_draft['body'] }}</pre>
+      </details>
+      {% if item.email_draft['status'] in ('pending_approval', 'draft') %}
+      <form class="inline" method="post" action="/emails/{{ item.email_draft['id'] }}/approve">
+        <button type="submit">Approve &amp; send</button>
+      </form>
+      <form class="inline" method="post" action="/emails/{{ item.email_draft['id'] }}/reject">
+        <button type="submit" class="secondary">Reject</button>
+      </form>
+      {% endif %}
+    {% else %}
+      <strong>Message draft</strong> <span class="muted">(no email on file -- copy this and send manually,
+      e.g. as a LinkedIn message on the recruiter's profile if you have the link above)</span>
+      <details open>
+        <summary class="muted">{{ item.email_draft['subject'] }}</summary>
+        <pre>{{ item.email_draft['body'] }}</pre>
+      </details>
     {% endif %}
+  </div>
+  {% endif %}
+
+  {% if item.is_imported %}
+  <div style="margin-top:10px;">
+    <strong>Application checklist</strong>
+    <ol class="muted" style="margin:6px 0 0 18px; padding:0;">
+      <li>Review the tailored resume above.</li>
+      <li>Open the job listing (button above) and review the actual application form/questions.</li>
+      <li>If it's an Easy Apply listing: review the suggested answers in the generated application
+        responses, adjust as needed, and complete submission in LinkedIn's own interface.</li>
+      <li>If there's a message draft above: copy it and send manually via the recruiter's LinkedIn profile or inbox.</li>
+      <li>Mark the application as submitted below once you've actually done it.</li>
+    </ol>
   </div>
   {% endif %}
 </div>
 {% else %}
-<p class="muted">No jobs yet -- run the pipeline first.</p>
+<p class="muted">No jobs yet -- run the pipeline, or <a href="/import">import one</a>.</p>
 {% endfor %}
 {% endblock %}

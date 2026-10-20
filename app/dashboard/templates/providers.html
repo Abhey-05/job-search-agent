@@ -3,22 +3,25 @@
 <h2>Provider configuration &amp; integration health</h2>
 
 <div class="card">
-  <h3 style="margin-top:0;">Contact lookup provider</h3>
+  <h3 style="margin-top:0;">Contact resolution policy</h3>
   <p class="muted">
-    Active: <strong>{{ health.contact_provider }}</strong> &middot;
-    Configured: <strong>{{ 'yes' if health.contact_configured else 'no (falls back to mock)' }}</strong>
+    No paid contact-enrichment provider is used (ContactOut and SignalHire
+    were removed by request -- see docs/INTEGRATIONS.md). Recruiter contact
+    info comes only from: evidence already on a job posting, information
+    you provide yourself when <a href="/import">importing</a> a job, or an
+    official company careers email found on the listing. If none of those
+    give an email, it's left blank -- never guessed.
   </p>
-  <pre>{{ health.contact_usage | tojson(indent=2) }}</pre>
-  <form method="post" action="/providers">
-    <label>Provider</label>
-    <select name="enabled_provider">
-      <option value="" {% if not contacts.enabled_provider %}selected{% endif %}>None (mock -- clearly-labeled fake data)</option>
-      <option value="contactout" {% if contacts.enabled_provider == 'contactout' %}selected{% endif %}>ContactOut (requires CONTACTOUT_API_KEY env var)</option>
-      <option value="signalhire" {% if contacts.enabled_provider == 'signalhire' %}selected{% endif %}>SignalHire (requires SIGNALHIRE_API_KEY env var)</option>
-    </select>
-    <div class="muted" style="margin-top:6px;">See docs/INTEGRATIONS.md for exactly what's tested vs. untested for each.</div>
+</div>
 
-    <h3>Email sending provider</h3>
+<div class="card">
+  <h3 style="margin-top:0;">Email sending provider</h3>
+  <p class="muted">
+    Active: <strong>{{ health.email_provider }}</strong> &middot;
+    Configured: <strong>{{ 'yes' if health.email_configured else 'no (falls back to mock)' }}</strong>.
+    Drafts are always generated regardless of this setting -- only sending needs it.
+  </p>
+  <form method="post" action="/providers">
     <label>Provider</label>
     <select name="email_provider">
       <option value="mock" {% if email.provider == 'mock' %}selected{% endif %}>Mock (records a fake "sent" id, never delivers)</option>

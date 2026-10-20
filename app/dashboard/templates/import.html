@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Import a job</h2>
+<div class="card">
+  <p class="muted">
+    Paste in a listing you found yourself (via <a href="/discover">LinkedIn
+    search</a> or anywhere else). It goes through the exact same pipeline as
+    an automatically discovered job: dedup, ranking, recruiter identification,
+    a tailored resume, and a message draft -- right after you submit this form.
+  </p>
+  <form method="post" action="/import">
+    <label>Job URL *</label>
+    <input type="text" name="url" required placeholder="https://www.linkedin.com/jobs/view/...">
+    <div class="row">
+      <div><label>Title *</label><input type="text" name="title" required></div>
+      <div><label>Company *</label><input type="text" name="company" required></div>
+    </div>
+    <div class="row">
+      <div><label>Location</label><input type="text" name="location"></div>
+      <div><label>Posted date (optional, YYYY-MM-DD)</label><input type="text" name="posted_at"></div>
+    </div>
+    <label>Description / requirements</label>
+    <textarea name="description" rows="6"></textarea>
+    <label>Where did you find this?</label>
+    <input type="text" name="found_via" placeholder="e.g. LinkedIn search, company site">
+
+    <h3>Recruiter / contact (only fill in what you actually know -- leave blank rather than guess)</h3>
+    <div class="row">
+      <div><label>Name</label><input type="text" name="recruiter_name"></div>
+      <div><label>Title</label><input type="text" name="recruiter_title"></div>
+    </div>
+    <div class="checks">
+      <label><input type="checkbox" name="is_hiring_manager"> This is the hiring manager, not a recruiter</label>
+    </div>
+    <div class="row">
+      <div><label>Email (only if you actually have it)</label><input type="text" name="recruiter_email"></div>
+      <div><label>LinkedIn profile URL</label><input type="text" name="recruiter_profile_url"></div>
+    </div>
+    <label>Official careers/talent-acquisition email (if no individual is known)</label>
+    <input type="text" name="careers_email">
+
+    <button type="submit" style="margin-top:14px;">Import and process</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0;">Or import several at once (CSV)</h3>
+  <p class="muted">
+    Columns: <code>title, company, location, url, description, posted_at,
+    recruiter_name, recruiter_title, is_hiring_manager, recruiter_email,
+    recruiter_profile_url, careers_email</code>. Only title/company/url
+    are required; everything else can be blank. This is a format you
+    create yourself (e.g. in a spreadsheet) -- it is not a specific
+    LinkedIn export.
+  </p>
+  <form method="post" action="/import/csv" enctype="multipart/form-data">
+    <input type="file" name="csv_file" accept=".csv">
+    <button type="submit" style="margin-top:10px;">Upload and process</button>
+  </form>
+</div>
+{% endblock %}

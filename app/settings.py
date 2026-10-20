@@ -22,7 +22,7 @@ from dataclasses import dataclass
 VALID_MODES = ("research_only", "approval_required", "rules_based")
 
 SETTINGS_SECTIONS = (
-    "profile", "preferences", "sources", "contacts", "email", "execution", "schedule",
+    "profile", "preferences", "sources", "email", "execution", "schedule", "notifications",
 )
 
 # Seeded into the database the first time it's read with no stored value.
@@ -103,11 +103,13 @@ DEFAULT_SETTINGS = {
     },
     "sources": {
         "enabled": ["sample_board_a", "sample_board_b"],
-    },
-    "contacts": {
-        "enabled_provider": None,
-        "contactout": {"api_key_env": "CONTACTOUT_API_KEY"},
-        "signalhire": {"api_key_env": "SIGNALHIRE_API_KEY"},
+        # Verified live on 2026-10-20: InMobi has a real public Greenhouse
+        # board with current PM/Product Analyst openings in Bangalore.
+        # Navi and Zomato didn't match common board-token/company-slug
+        # guesses on Greenhouse or Lever -- add real tokens here once you
+        # find them (check Settings -> Sources for how to verify one).
+        "greenhouse_boards": ["inmobi"],
+        "lever_companies": [],
     },
     "email": {
         "provider": "mock",
@@ -126,6 +128,12 @@ DEFAULT_SETTINGS = {
         "days": ["mon", "wed", "fri"],
         "time": "08:00",
         "timezone": "Asia/Kolkata",
+    },
+    "notifications": {
+        # Best-effort only, and only if email.provider is a real (non-mock)
+        # provider -- a run summary is never required to complete a run.
+        "enabled": False,
+        "notify_email": "",
     },
 }
 
@@ -157,10 +165,6 @@ class Settings:
         return self.raw["sources"]
 
     @property
-    def contacts(self) -> dict:
-        return self.raw["contacts"]
-
-    @property
     def email(self) -> dict:
         return self.raw["email"]
 
@@ -171,6 +175,10 @@ class Settings:
     @property
     def schedule(self) -> dict:
         return self.raw["schedule"]
+
+    @property
+    def notifications(self) -> dict:
+        return self.raw["notifications"]
 
     @property
     def mode(self) -> str:

@@ -1,36 +1,27 @@
-"""Chooses a contact provider from config. Pipeline code only ever calls
-get_contact_provider(config) -- it never imports a specific provider."""
+"""No paid contact-enrichment provider is used by this application --
+ContactOut and SignalHire were removed per an explicit decision not to pay
+for or depend on a contact-data vendor (see docs/INTEGRATIONS.md).
+
+Recruiter contact info now comes only from:
+  1. Evidence already present on the job posting (a named recruiter's
+     email, if the source happens to supply one -- see app/recruiter_matching.py).
+  2. Information the user explicitly provides at import time (the
+     dashboard's manual-import form has optional recruiter name/email/
+     LinkedIn-profile fields).
+  3. An official company careers-contact email found on the listing.
+
+`MockContactProvider` is kept only for sample/demo data (`is_sample=True`
+jobs) so the pipeline and dashboard remain demonstrable without any real
+job imported yet -- see app/pipeline.py's lookup_contacts, which never
+calls it for a real (non-sample) job. This function exists so that
+interface stays swappable if a free/permitted provider is ever added
+later; it intentionally never returns anything that calls a paid API.
+"""
 from __future__ import annotations
 
-import logging
-
 from app.contacts.base import ContactProvider
-from app.contacts.contactout_provider import ContactOutProvider
 from app.contacts.mock_provider import MockContactProvider
-from app.contacts.signalhire_provider import SignalHireProvider
-
-logger = logging.getLogger(__name__)
 
 
-def get_contact_provider(config) -> ContactProvider:
-    enabled = config.contacts.get("enabled_provider")
-
-    if enabled == "contactout":
-        api_key = config.resolve_env_secret(config.contacts["contactout"]["api_key_env"])
-        provider = ContactOutProvider(api_key)
-    elif enabled == "signalhire":
-        api_key = config.resolve_env_secret(config.contacts["signalhire"]["api_key_env"])
-        provider = SignalHireProvider(api_key)
-    elif enabled is None:
-        return MockContactProvider()
-    else:
-        raise ValueError(f"Unknown contacts.enabled_provider '{enabled}'")
-
-    if not provider.is_configured():
-        logger.warning(
-            "Contact provider '%s' is enabled in config but not configured "
-            "(missing API key env var). Falling back to the mock provider "
-            "for this run.", enabled,
-        )
-        return MockContactProvider()
-    return provider
+def get_sample_demo_provider() -> ContactProvider:
+    return MockContactProvider()

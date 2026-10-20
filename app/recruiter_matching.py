@@ -35,6 +35,8 @@ class RecruiterMatch:
     evidence_note: str
     confidence: float
     careers_email: Optional[str] = None  # set only for the careers_contact tier
+    provided_email: Optional[str] = None   # set only when the user supplied it at import time
+    profile_url: Optional[str] = None       # LinkedIn (or other) profile URL, if the user supplied one
 
 
 def match_recruiter(job_row) -> Optional[RecruiterMatch]:
@@ -48,26 +50,36 @@ def match_recruiter(job_row) -> Optional[RecruiterMatch]:
 
     named_recruiter = raw.get("named_recruiter")
     if named_recruiter and named_recruiter.get("name"):
+        note = "Named explicitly as the recruiter on the job posting."
+        if named_recruiter.get("email"):
+            note += " Email was supplied directly by the user, not looked up or guessed."
         return RecruiterMatch(
             name=named_recruiter["name"],
             title=named_recruiter.get("title"),
             company=company,
             relationship="named_recruiter",
             evidence_url=url,
-            evidence_note="Named explicitly as the recruiter on the job posting.",
+            evidence_note=note,
             confidence=0.9,
+            provided_email=named_recruiter.get("email"),
+            profile_url=named_recruiter.get("profile_url"),
         )
 
     hiring_manager = raw.get("hiring_manager")
     if hiring_manager and hiring_manager.get("name"):
+        note = "Named as the hiring manager / team lead for this opening."
+        if hiring_manager.get("email"):
+            note += " Email was supplied directly by the user, not looked up or guessed."
         return RecruiterMatch(
             name=hiring_manager["name"],
             title=hiring_manager.get("title"),
             company=company,
             relationship="hiring_manager",
             evidence_url=url,
-            evidence_note="Named as the hiring manager / team lead for this opening.",
+            evidence_note=note,
             confidence=0.75,
+            provided_email=hiring_manager.get("email"),
+            profile_url=hiring_manager.get("profile_url"),
         )
 
     poster = raw.get("poster")

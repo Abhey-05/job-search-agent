@@ -90,6 +90,7 @@ def _schema_statements(dialect: str) -> list[str]:
             evidence_url TEXT,
             evidence_note TEXT,
             confidence REAL,
+            profile_url TEXT,
             created_at TEXT NOT NULL
         )""",
         f"""CREATE TABLE IF NOT EXISTS contacts (
@@ -311,6 +312,10 @@ class Database:
         )
         self.conn.commit()
 
+    def clear_all_rankings(self):
+        self._exec("UPDATE jobs SET ranked_at = NULL WHERE duplicate_of IS NULL")
+        self.conn.commit()
+
     def mark_stage_done(self, job_id: str, column: str):
         assert column in (
             "recruiter_matched_at", "contact_looked_up_at",
@@ -328,16 +333,18 @@ class Database:
     # ------------------------------------------------------------ recruiters
     def add_recruiter(self, job_id: str, name: Optional[str], title: Optional[str],
                        company: Optional[str], relationship: str, evidence_url: str,
-                       evidence_note: str, confidence: float) -> int:
+                       evidence_note: str, confidence: float,
+                       profile_url: Optional[str] = None) -> int:
         row = self._one(
             """INSERT INTO recruiters (job_id, name, title, company, relationship,
-                evidence_url, evidence_note, confidence, created_at)
+                evidence_url, evidence_note, confidence, profile_url, created_at)
                VALUES (:job_id, :name, :title, :company, :relationship,
-                :evidence_url, :evidence_note, :confidence, :created_at)
+                :evidence_url, :evidence_note, :confidence, :profile_url, :created_at)
                RETURNING id""",
             {"job_id": job_id, "name": name, "title": title, "company": company,
              "relationship": relationship, "evidence_url": evidence_url,
-             "evidence_note": evidence_note, "confidence": confidence, "created_at": _now()},
+             "evidence_note": evidence_note, "confidence": confidence,
+             "profile_url": profile_url, "created_at": _now()},
         )
         self.conn.commit()
         return row["id"]

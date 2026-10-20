@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Discovery sources</h2>
+<div class="card">
+  <p class="muted">
+    Greenhouse and Lever both run free, public, unauthenticated job-board
+    APIs meant for exactly this kind of use -- not every company has a
+    board on either, and the token/slug isn't always guessable from the
+    company name. Verify one before adding it:
+    <code>curl https://boards-api.greenhouse.io/v1/boards/&lt;token&gt;/jobs</code>
+    or <code>curl "https://api.lever.co/v0/postings/&lt;company&gt;?mode=json"</code>
+    -- a 200 with real jobs means it's valid, a 404 means it isn't on that platform.
+  </p>
+  <form method="post" action="/sources">
+    <label>Greenhouse board tokens (comma-separated)</label>
+    <input type="text" name="greenhouse_boards" value="{{ sources.greenhouse_boards|join(', ') }}">
+    <div class="muted">Verified: "inmobi" has InMobi's real, current openings.</div>
+
+    <label>Lever company slugs (comma-separated)</label>
+    <input type="text" name="lever_companies" value="{{ sources.lever_companies|join(', ') }}">
+
+    <label>Built-in test/demo sources (comma-separated -- leave as-is unless you know why you'd change it)</label>
+    <input type="text" name="enabled" value="{{ sources.enabled|join(', ') }}">
+
+    <button type="submit" style="margin-top:12px;">Save sources</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0;">What's not included, and why</h3>
+  <p class="muted">
+    Company career pages beyond Greenhouse/Lever aren't supported generically
+    -- each one has its own markup and terms, so a generic scraper would be
+    unreliable at best and could violate a specific site's terms at worst.
+    If you find a company with its own public, documented job-listing API,
+    tell me and I'll build a dedicated adapter for it the same way Greenhouse
+    and Lever's were built: verified against a real response before being
+    trusted.
+  </p>
+</div>
+{% endblock %}

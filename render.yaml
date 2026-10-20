@@ -42,10 +42,6 @@ services:
         sync: false
       - key: FLASK_SECRET_KEY
         sync: false
-      - key: CONTACTOUT_API_KEY
-        sync: false
-      - key: SIGNALHIRE_API_KEY
-        sync: false
       - key: GMAIL_CLIENT_ID
         sync: false
       - key: GMAIL_CLIENT_SECRET

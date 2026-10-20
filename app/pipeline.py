@@ -18,7 +18,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from app.application_prep import prepare_application_package
-from app.contacts.registry import get_contact_provider
+from app.contacts.registry import get_sample_demo_provider
 from app.db import Database
 from app.dedup import compute_dedup_hash, compute_job_id
 from app.email_module.drafting import draft_recruiter_email
@@ -140,7 +140,7 @@ class Runner:
                         job_id=job["id"], name=match.name, title=match.title,
                         company=match.company, relationship=match.relationship,
                         evidence_url=match.evidence_url, evidence_note=match.evidence_note,
-                        confidence=match.confidence,
+                        confidence=match.confidence, profile_url=match.profile_url,
                     )
                     if match.careers_email:
                         self.db.add_contact(
@@ -148,6 +148,15 @@ class Runner:
                             email=match.careers_email, email_status="unverified",
                             phone=None, confidence=match.confidence, credits_used=0,
                             raw={"source": "official careers contact on posting"},
+                        )
+                    elif match.provided_email:
+                        # User supplied this directly at import time -- never
+                        # guessed, never looked up via a paid provider.
+                        self.db.add_contact(
+                            recruiter_id=recruiter_id, provider="user_provided",
+                            email=match.provided_email, email_status="unverified",
+                            phone=None, confidence=0.9, credits_used=0,
+                            raw={"source": "user-provided at import time"},
                         )
                     summary.recruiters_matched += 1
                     self.db.log_activity(run_id, "job", job["id"], "recruiter_matched",
@@ -162,36 +171,41 @@ class Runner:
 
     # ------------------------------------------------------------- contact
     def lookup_contacts(self, run_id: int, summary: RunSummary):
-        provider = get_contact_provider(self.config)
-        touched_provider = False
+        """No paid contact-enrichment provider exists in this app (see
+        docs/INTEGRATIONS.md). For real (non-sample) jobs, a contact is
+        only ever recorded here if the user supplied one directly at
+        import time (handled already in match_recruiters, via
+        match.provided_email/careers_email) -- this stage never guesses
+        or auto-looks-up an email for a real job. It only calls
+        MockContactProvider for `is_sample=True` demo/test jobs, so the
+        pipeline stays demonstrable without any real data imported."""
+        demo_provider = get_sample_demo_provider()
         for job in self.db.jobs_needing_stage("contact_looked_up_at"):
             try:
                 recruiters = self.db.get_recruiters_for_job(job["id"])
                 for recruiter in recruiters:
                     existing = self.db.get_contact_for_recruiter(recruiter["id"])
                     if existing is not None:
-                        continue  # already have a contact (e.g. careers_email from matching)
+                        continue  # already have one (careers_email / user_provided from matching)
                     if not recruiter["name"]:
                         self.db.log_activity(run_id, "recruiter", recruiter["id"],
-                                              "contact_skipped", "no individual name to search")
+                                              "contact_skipped", "no individual name available")
+                        continue
+                    if not job["is_sample"]:
+                        self.db.log_activity(
+                            run_id, "recruiter", recruiter["id"], "no_automated_lookup",
+                            "No paid contact-lookup provider is configured; leaving email "
+                            "blank rather than guessing. Supply it manually if you have it.",
+                        )
                         continue
 
-                    touched_provider = True
                     query = ContactSearchQuery(
                         name=recruiter["name"], company=recruiter["company"],
                         title=recruiter["title"],
                     )
-                    result = provider.search_person(query)
+                    result = demo_provider.search_person(query)
                     if result is None:
-                        self.db.log_activity(run_id, "recruiter", recruiter["id"],
-                                              "contact_lookup_none", f"provider={provider.name}")
                         continue
-
-                    if result.email and result.email_status == "unverified" and provider.name != "contactout":
-                        verified = provider.verify_email(result.email)
-                        if verified == "valid":
-                            result.email_status = "verified"
-
                     self.db.add_contact(
                         recruiter_id=recruiter["id"], provider=result.source,
                         email=result.email, email_status=result.email_status,
@@ -200,16 +214,12 @@ class Runner:
                     )
                     summary.contacts_looked_up += 1
                     self.db.log_activity(run_id, "recruiter", recruiter["id"], "contact_found",
-                                          f"{result.email or '(none)'} [{result.email_status}] via {result.source}")
+                                          f"{result.email or '(none)'} [{result.email_status}] via {result.source} (SAMPLE DATA)")
                 self.db.mark_stage_done(job["id"], "contact_looked_up_at")
             except Exception as e:
                 logger.exception("Contact lookup failed for job %s", job["id"])
                 summary.errors.append(f"contact_lookup:{job['id']}: {e}")
                 self.db.log_activity(run_id, "job", job["id"], "contact_lookup_failed", str(e))
-
-        if touched_provider:
-            self.db.log_activity(run_id, "contact_provider", provider.name, "usage_info",
-                                  str(provider.usage_info()))
 
     # ------------------------------------------------------------- package
     def prepare_packages(self, run_id: int, summary: RunSummary):
@@ -379,6 +389,42 @@ class Runner:
             self.db.log_activity(run_id, "application", application["id"], "auto_submit_unavailable",
                                   "No authorized submission adapter configured for this source.")
 
+    # --------------------------------------------------------------- shared
+    def process_existing(self, run_id: int, summary: RunSummary):
+        """Rank -> recruiter-match -> contact -> package -> draft, for
+        whatever jobs haven't completed each stage yet -- regardless of
+        whether they came from discovery or a manual import. This is what
+        both a full `run()` and the dashboard's "process this import now"
+        action call, so imported jobs go through exactly the same logic
+        as discovered ones."""
+        self.rank_jobs(run_id, summary)
+        self.match_recruiters(run_id, summary)
+        self.lookup_contacts(run_id, summary)
+        self.prepare_packages(run_id, summary)
+        self.draft_emails(run_id, summary)
+
+    def rerank_all(self, run_id: int, summary: RunSummary):
+        """Clears ranked_at on every active job so the next rank_jobs()
+        call re-scores everything against current preferences -- useful
+        after editing target roles/companies/keywords on jobs discovered
+        or imported before that change."""
+        self.db.clear_all_rankings()
+        self.rank_jobs(run_id, summary)
+
+    def _send_run_notification(self, summary: RunSummary):
+        notif = self.config.notifications
+        if not notif.get("enabled") or not notif.get("notify_email"):
+            return
+        from app.email_module.registry import get_email_provider
+        provider = get_email_provider(self.config)
+        if provider.name == "mock":
+            return  # notifications require a real, configured email provider
+        try:
+            body = "\n".join(f"{k}: {v}" for k, v in summary.as_dict().items())
+            provider.send(notif["notify_email"], f"Job search run #{summary.run_id} summary", body)
+        except Exception as e:
+            logger.warning("Run notification failed (non-fatal): %s", e)
+
     # ------------------------------------------------------------------ run
     def run(self) -> RunSummary:
         mode = self.config.mode
@@ -386,11 +432,7 @@ class Runner:
         summary = RunSummary(run_id=run_id, mode=mode)
         try:
             self.discover_and_normalize(run_id, summary)
-            self.rank_jobs(run_id, summary)
-            self.match_recruiters(run_id, summary)
-            self.lookup_contacts(run_id, summary)
-            self.prepare_packages(run_id, summary)
-            self.draft_emails(run_id, summary)
+            self.process_existing(run_id, summary)
             self.build_and_execute_queue(run_id, summary)
             status = "completed" if not summary.errors else "completed_with_errors"
             self.db.finish_run(run_id, status, summary.as_dict())
@@ -398,4 +440,5 @@ class Runner:
             logger.exception("Run %s failed", run_id)
             summary.errors.append(f"run:{e}")
             self.db.finish_run(run_id, "failed", summary.as_dict())
+        self._send_run_notification(summary)
         return summary
