@@ -1,21 +1,26 @@
 """ContactOut provider.
 
-Built against ContactOut's public API documentation at
-https://api.contactout.com/ (reviewed October 2026). Endpoints used:
+Endpoint used:
+  - POST https://api.contactout.com/v1/people/search (find a person by name/company/title)
 
-  - POST https://api.contactout.com/v1/people/search   (find a person by name/company/title)
-  - GET  https://api.contactout.com/v1/people/linkedin/work_email_status  (verify a found work email)
+Auth: header `token: <API_KEY>`.
 
-Auth: header `token: <API_KEY>`. ContactOut does not offer self-serve key
-issuance -- a key is obtained by booking a meeting with their team. This
-class will simply report `is_configured() == False` and the pipeline falls
-back to the mock provider until CONTACTOUT_API_KEY is set.
+VERIFIED against a live call on 2026-10-20 with a real (trial-tier) API
+key. Two things were corrected from the first (docs-only) version after
+seeing the real response:
 
-IMPORTANT: this integration has NOT been exercised against a live account
-(no credentials were available while building it). The request/response
-shapes below follow the published docs as closely as possible, but treat
-this as untested until you run `python -m app verify-contacts contactout`
-with a real key and confirm it against your own dashboard's usage counter.
+  1. `profiles` is a dict keyed by LinkedIn URL/vanity slug, not a list.
+  2. Email/phone/verification live under each profile's `contact_info`
+     object (`work_emails`, `personal_emails`, `phones`,
+     `work_email_status`), not top-level `work_email`/`personal_email`
+     fields as the secondhand docs suggested.
+
+That same test call returned ContactOut's documented placeholder/"sample
+response" content (`message: "This is a sample response..."`, emails like
+`test@gmail.com`/`email1@example.com`) -- the trial-tier key used to test
+this proves the request shape, auth, and response parsing are correct,
+but does NOT prove real lookups work. A paid plan is required for that;
+re-verify with a paid key before trusting results in a normal run.
 """
 from __future__ import annotations
 
@@ -64,27 +69,41 @@ class ContactOutProvider(ContactProvider):
             logger.error("ContactOut search_person failed: %s", e)
             return None
 
-        profiles = data.get("profiles") or data.get("results") or []
-        if not profiles:
+        if data.get("message"):
+            logger.info("ContactOut response note: %s", data["message"])
+
+        profiles_obj = data.get("profiles")
+        top = None
+        if isinstance(profiles_obj, dict) and profiles_obj:
+            top = next(iter(profiles_obj.values()))
+        elif isinstance(profiles_obj, list) and profiles_obj:
+            top = profiles_obj[0]
+
+        if top is None:
             return ContactResult(
                 email=None, email_status="not_found", phone=None, confidence=0.0,
                 source=self.name, credits_used=0, raw=data,
             )
 
-        top = profiles[0]
-        work_email = top.get("work_email")
-        personal_email = top.get("personal_email")
+        contact_info = top.get("contact_info") or {}
+        work_emails = contact_info.get("work_emails") or []
+        personal_emails = contact_info.get("personal_emails") or []
+        phones = contact_info.get("phones") or []
+        work_email = work_emails[0] if work_emails else None
+        personal_email = personal_emails[0] if personal_emails else None
         email = work_email or personal_email
+
         email_status = "unverified"
         if work_email:
-            status = self.verify_email(work_email)
-            if status == "valid":
+            status_map = contact_info.get("work_email_status") or {}
+            raw_status = str(status_map.get(work_email, "")).lower()
+            if "verified" in raw_status and "unverified" not in raw_status:
                 email_status = "verified"
 
         return ContactResult(
             email=email,
             email_status=email_status if email else "not_found",
-            phone=top.get("phone"),
+            phone=phones[0] if phones else None,
             confidence=0.8 if work_email else (0.5 if personal_email else 0.0),
             source=self.name,
             credits_used=1 if email else 0,
@@ -92,6 +111,12 @@ class ContactOutProvider(ContactProvider):
         )
 
     def verify_email(self, email: str) -> Optional[str]:
+        """Not independently re-verified -- the live test above showed
+        work_email_status is already embedded in the search response, so
+        the pipeline never needs to call this separately for ContactOut
+        (see app/pipeline.py's lookup_contacts, which skips the extra call
+        for provider.name == 'contactout'). Kept as a documented-but-
+        unverified fallback for direct use outside the pipeline."""
         if not self.is_configured():
             return None
         try:
@@ -106,11 +131,11 @@ class ContactOutProvider(ContactProvider):
         except requests.RequestException as e:
             logger.error("ContactOut verify_email failed: %s", e)
             return "unknown"
-        status = (data.get("status") or "").lower()
-        if status in ("verified", "valid"):
+        status = str(data.get("status", "")).lower()
+        if "verified" in status and "unverified" not in status:
             return "valid"
-        if status in ("invalid", "unverified"):
-            return "invalid" if status == "invalid" else "unknown"
+        if "invalid" in status:
+            return "invalid"
         return "unknown"
 
     def usage_info(self) -> dict:
@@ -118,8 +143,7 @@ class ContactOutProvider(ContactProvider):
             "provider": self.name,
             "credits_remaining": None,
             "note": (
-                "ContactOut does not expose a dedicated usage endpoint in the "
-                "reviewed public docs; check the dashboard at contactout.com "
-                "for current credit balance."
+                "ContactOut does not expose a dedicated usage endpoint; check "
+                "the dashboard at contactout.com for current credit balance."
             ),
         }
