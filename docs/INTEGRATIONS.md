@@ -1,10 +1,10 @@
 # Integrations status
 
-Reviewed October 2026 against each vendor's public documentation. Neither
-vendor offers self-serve free API keys, so **no live calls have been made**
-against either provider -- everything below marked "untested" means exactly
-that: built against the documented request/response shapes, never
-exercised against a real account.
+Reviewed October 2026 against each vendor's public documentation.
+ContactOut has since been live-tested against a real (trial-tier) key --
+see below for what that confirmed and what it didn't. SignalHire and
+Gmail remain untested: built against documented request/response shapes,
+never exercised against a real account.
 
 ## ContactOut
 
@@ -21,14 +21,26 @@ exercised against a real account.
   ContactOut directly, which this task was not able to do.
 - **Capabilities used by `app/contacts/contactout_provider.py`:**
   - `POST /v1/people/search` -- find a person by name/company/title
-  - `GET /v1/people/linkedin/work_email_status` -- verify a found work email
 - **Credits:** per-action (1 credit per profile returned, 1 per email
   found). No documented endpoint for checking remaining balance; the
   provider's `usage_info()` says to check the ContactOut dashboard directly.
-- **Status: built, untested.** Set `CONTACTOUT_API_KEY` (env var / platform
-  secret) and switch the provider to ContactOut from the dashboard's
-  **Providers** page, then run a single lookup and compare it against your
-  ContactOut dashboard's usage counter before trusting it in a normal run.
+- **Status: LIVE-VERIFIED on 2026-10-20, trial-tier key, sample data only.**
+  A real call against a real (but trial-tier) `CONTACTOUT_API_KEY` succeeded
+  and confirmed the auth header, endpoint, and response parsing are all
+  correct -- two assumptions from the docs were wrong and have been fixed:
+  `profiles` is a dict keyed by LinkedIn URL (not a list), and email/phone/
+  verification live under each profile's `contact_info` object, not
+  top-level `work_email`/`personal_email` fields.
+  **However**, the response body itself said *"This is a sample response.
+  To unlock full access, please book a call with our sales team"* and
+  returned placeholder data (`test@gmail.com`, `email1@example.com`,
+  `+123456789`, a literal `"Verified | Unverified"` status string) --
+  this key proves the integration's plumbing works, not that real lookups
+  work. A paid ContactOut plan is required to verify that, and hasn't been
+  tested. The `/v1/people/linkedin/work_email_status` endpoint for
+  standalone verification was not independently retested (the search
+  response already embeds verification status, so the pipeline never
+  calls it) -- treat that one method as still docs-only/unverified.
 
 ## SignalHire
 
