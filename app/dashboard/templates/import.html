@@ -4,13 +4,21 @@
 <div class="card">
   <p class="muted">
     Paste in a listing you found yourself (via <a href="/discover">LinkedIn
-    search</a> or anywhere else). It goes through the exact same pipeline as
-    an automatically discovered job: dedup, ranking, recruiter identification,
-    a tailored resume, and a message draft -- right after you submit this form.
+    search</a> or anywhere else) -- or a role a recruiter mentioned in a
+    LinkedIn <strong>post</strong> rather than a formal listing. There's no
+    safe, authorized way for this app to read your LinkedIn feed or
+    messages automatically (see docs/INTEGRATIONS.md's MCP evaluation --
+    every option found for that requires logged-in browser automation or
+    scraping, which this app deliberately does not do), so this form is
+    the bridge: paste the post's URL, whatever role/company details it
+    gives, and the recruiter's name/profile link if named. It goes through
+    the exact same pipeline as an automatically discovered job: dedup,
+    ranking, recruiter identification, a tailored resume, and a message
+    draft -- right after you submit this form.
   </p>
   <form method="post" action="/import">
-    <label>Job URL *</label>
-    <input type="text" name="url" required placeholder="https://www.linkedin.com/jobs/view/...">
+    <label>Post or job URL *</label>
+    <input type="text" name="url" required placeholder="https://www.linkedin.com/jobs/view/... or a post URL">
     <div class="row">
       <div><label>Title *</label><input type="text" name="title" required></div>
       <div><label>Company *</label><input type="text" name="company" required></div>

@@ -46,8 +46,44 @@ parameters -- the same page and parameters you'd land on by clicking
 their filter chips. The dashboard's `/discover` page shows this link for
 you to open and browse in your own, logged-in browser. Nothing in this
 app fetches, scrapes, parses, or authenticates against LinkedIn -- it
-only ever constructs a URL. When you find something worth pursuing, use
-`/import` to paste it in.
+only ever constructs a URL. When you find something worth pursuing --
+including a role mentioned in a recruiter's feed post, not just a formal
+listing -- use `/import` to paste in whatever you have: the post/listing
+URL, the role and company as best you can tell, and the recruiter's name
+and profile URL if named. The description field accepts free text, so a
+recruiter's post text works fine there too.
+
+### MCP evaluation -- audited 2026-10-21, none recommended
+
+Checked whether any MCP server could provide authorized LinkedIn job
+search, recruiter-post reading, or messaging. Findings:
+
+- **No official LinkedIn MCP server exists.** LinkedIn publishes no MCP
+  product alongside Sign In with LinkedIn, Share on LinkedIn, the
+  Community Management API, or the Advertising API -- confirmed via
+  direct research, not assumed.
+- **Every third-party "LinkedIn MCP server" found falls into one of two
+  categories, neither of which is safe to install:**
+  1. **Session/browser-automation based** (e.g. `stickerdaniel/linkedin-mcp-server`
+     and its many forks). Its own README states it "controls a real
+     browser session" via reused or manually-entered LinkedIn login
+     cookies, and warns outright: *"LinkedIn's User Agreement prohibits
+     automated access, and accounts using automated tools can be
+     restricted or banned. Use at your own risk."* This is exactly the
+     cookie-based/bypass category the user asked not to install.
+  2. **Public scraping without login** (e.g. `administrativetrick/linkedin-mcp`,
+     via the third-party `linkedin-jobs-api` package). No login needed,
+     but it still scrapes LinkedIn's site to get job data, which is
+     still automated access LinkedIn's terms prohibit regardless of
+     whether you're logged in -- and its own README acknowledges it
+     "could break if LinkedIn changes their HTML structure."
+- **Conclusion: no MCP integration is recommended or installed.** Both
+  categories do exactly what the official-API audit already established
+  is unavailable through authorized means -- they just do it anyway, in
+  a way that risks the account. The existing LinkedIn search-link +
+  manual-import workflow above, plus the OAuth sign-in (profile/email
+  only, see below), remain the full extent of this app's LinkedIn
+  integration, by design.
 
 LinkedIn's `f_C` company filter needs a numeric internal company ID that
 isn't resolvable without LinkedIn API/scraping access, so "target
