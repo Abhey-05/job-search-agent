@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% if not has_resume %}
+<div class="warn-banner">
+  No resume uploaded yet. Generated application packages will use placeholder
+  text until you <a href="/profile">upload a resume</a> or run
+  <code>python -m app import-resume /path/to/resume.pdf</code>.
+</div>
+{% endif %}
+
+<div class="card" style="display:flex; justify-content:space-between; align-items:center;">
+  <div>
+    <span class="badge mode-{{ mode }}">{{ mode }}</span>
+    {% if paused %}<span class="badge paused">PAUSED</span>{% endif %}
+    <div class="muted" style="margin-top:6px;">
+      Mode and pause state are read from config.yaml / app_state. Change execution.mode in config.yaml to switch modes.
+    </div>
+  </div>
+  <div>
+    <form class="inline" method="post" action="/run">
+      <button type="submit">Run now</button>
+    </form>
+    {% if paused %}
+    <form class="inline" method="post" action="/resume">
+      <button type="submit" class="secondary">Resume</button>
+    </form>
+    {% else %}
+    <form class="inline" method="post" action="/pause">
+      <button type="submit" class="danger">Pause all external actions</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid">
+  <div class="stat"><div class="n">{{ snapshot.jobs|length }}</div><div class="label">Active jobs tracked</div></div>
+  <div class="stat"><div class="n">{{ snapshot.new_since_last_run|length }}</div><div class="label">New since last run</div></div>
+  <div class="stat"><div class="n">{{ snapshot.pending_emails|length }}</div><div class="label">Emails awaiting approval</div></div>
+  <div class="stat"><div class="n">{{ snapshot.pending_applications|length }}</div><div class="label">Applications awaiting approval</div></div>
+  <div class="stat"><div class="n">{{ snapshot.sent_emails|length }}</div><div class="label">Emails sent</div></div>
+  <div class="stat"><div class="n">{{ snapshot.submitted_applications|length }}</div><div class="label">Applications submitted</div></div>
+  <div class="stat"><div class="n">{{ snapshot.failed_emails|length + snapshot.failed_applications|length }}</div><div class="label">Errors needing attention</div></div>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0;">New opportunities since last completed run</h3>
+  {% if snapshot.new_since_last_run %}
+  <table>
+    <tr><th>Title</th><th>Company</th><th>Source</th><th>Rank</th></tr>
+    {% for j in snapshot.new_since_last_run %}
+    <tr>
+      <td>{{ j['title'] }} {% if j['is_sample'] %}<span class="tag sample">SAMPLE</span>{% endif %}</td>
+      <td>{{ j['company'] }}</td>
+      <td>{{ j['source'] }}</td>
+      <td>{{ '%.2f'|format(j['rank_score']) if j['rank_score'] is not none else 'not ranked yet' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">None yet -- run the pipeline to discover opportunities.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0;">Recent activity</h3>
+  <table>
+    <tr><th>When</th><th>Entity</th><th>Action</th><th>Detail</th></tr>
+    {% for a in snapshot.activity[:20] %}
+    <tr>
+      <td class="muted">{{ a['created_at'] }}</td>
+      <td>{{ a['entity_type'] }} {{ a['entity_id'] or '' }}</td>
+      <td>{{ a['action'] }}</td>
+      <td class="muted">{{ a['detail'] }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+{% endblock %}

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Scheduled run configuration</h2>
+<div class="card">
+  <form method="post" action="/schedule">
+    <div class="checks">
+      <label><input type="checkbox" name="enabled" {% if schedule.enabled %}checked{% endif %}> Enabled</label>
+    </div>
+    <label>Days</label>
+    <div class="checks">
+      {% for d in ['mon','tue','wed','thu','fri','sat','sun'] %}
+      <label><input type="checkbox" name="days" value="{{ d }}" {% if d in schedule.days %}checked{% endif %}> {{ d }}</label>
+      {% endfor %}
+    </div>
+    <div class="row">
+      <div><label>Time (HH:MM, local to the timezone below)</label><input type="text" name="time" value="{{ schedule.time }}"></div>
+      <div><label>Timezone (IANA name)</label><input type="text" name="timezone" value="{{ schedule.timezone }}"></div>
+    </div>
+    <button type="submit" style="margin-top:12px;">Save schedule</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0;">How this actually runs on a schedule</h3>
+  <p>Render and Railway cron jobs only accept <strong>UTC</strong> cron expressions with no
+     timezone/DST awareness. Based on your current settings, the equivalent UTC cron
+     expression is:</p>
+  <pre>{{ utc_cron }}</pre>
+  <p class="muted">
+    Paste this into the platform's Cron Job schedule field, with the command
+    <code>python -m app run</code>. For Asia/Kolkata (no DST) this expression is
+    exact and permanent. If you switch to a DST-observing timezone, you'll need to
+    update it twice a year -- or run <code>python -m app scheduler</code> instead,
+    which is timezone- and DST-aware but requires a process that stays running
+    (not suitable for Render/Railway's cron job type, which is meant to start,
+    run, and exit).
+  </p>
+</div>
+{% endblock %}

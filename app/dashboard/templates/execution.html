@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Execution policy</h2>
+<div class="card">
+  <span class="badge mode-{{ execution.mode }}">{{ execution.mode }}</span>
+  {% if paused %}<span class="badge paused">PAUSED</span>{% endif %}
+  <form method="post" action="/execution" style="margin-top:14px;">
+    <label>Mode</label>
+    <div class="checks">
+      <label><input type="radio" name="mode" value="research_only" {% if execution.mode == 'research_only' %}checked{% endif %}> Research only</label>
+      <label><input type="radio" name="mode" value="approval_required" {% if execution.mode == 'approval_required' %}checked{% endif %}> Approval required</label>
+      <label><input type="radio" name="mode" value="rules_based" {% if execution.mode == 'rules_based' %}checked{% endif %}> Rules-based automation</label>
+    </div>
+
+    <div class="row">
+      <div><label>Per-run email limit</label><input type="number" name="per_run_emails" value="{{ execution.per_run_limits.emails }}"></div>
+      <div><label>Per-run application limit</label><input type="number" name="per_run_applications" value="{{ execution.per_run_limits.applications }}"></div>
+    </div>
+    <div class="row">
+      <div><label>Weekly email limit</label><input type="number" name="weekly_emails" value="{{ execution.weekly_limits.emails }}"></div>
+      <div><label>Weekly application limit</label><input type="number" name="weekly_applications" value="{{ execution.weekly_limits.applications }}"></div>
+    </div>
+
+    <label>Rules-based mode only: sources allowed to auto-send email without per-item approval (comma-separated source names, e.g. {{ sources|join(', ') }})</label>
+    <input type="text" name="allowed_auto_email_sources" value="{{ execution.rules_based.allowed_auto_email_sources|join(', ') }}">
+    <label>Rules-based mode only: sources allowed to auto-submit applications (empty until a real, authorized submission adapter exists)</label>
+    <input type="text" name="allowed_auto_submit_sources" value="{{ execution.rules_based.allowed_auto_submit_sources|join(', ') }}">
+
+    <div class="checks" style="margin-top:10px;">
+      <label><input type="checkbox" name="paused" {% if paused %}checked{% endif %}> Paused (no sends/submissions regardless of mode)</label>
+    </div>
+    <button type="submit" style="margin-top:12px;">Save execution policy</button>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Preferences</h2>
+<div class="card">
+  <form method="post" action="/preferences">
+    <label>Target roles (comma-separated)</label>
+    <input type="text" name="target_roles" value="{{ preferences.target_roles|join(', ') }}">
+    <label>Target companies (comma-separated -- boosted in ranking, not a hard filter)</label>
+    <input type="text" name="target_companies" value="{{ preferences.target_companies|join(', ') }}">
+    <label>Preferred locations (comma-separated; leave blank to stay neutral on location)</label>
+    <input type="text" name="locations" value="{{ preferences.locations|join(', ') }}">
+    <div class="checks" style="margin-top:10px;">
+      <label><input type="checkbox" name="remote_ok" {% if preferences.remote_ok %}checked{% endif %}> Remote OK</label>
+    </div>
+    <label>Minimum salary (optional, informational only for now)</label>
+    <input type="number" name="min_salary" value="{{ preferences.min_salary or '' }}">
+    <label>Seniority (comma-separated)</label>
+    <input type="text" name="seniority" value="{{ preferences.seniority|join(', ') }}">
+    <label>Boosted keywords (comma-separated)</label>
+    <input type="text" name="keywords_boost" value="{{ preferences.keywords_boost|join(', ') }}">
+    <label>Excluded keywords (comma-separated -- a hard exclusion; matching jobs get no recruiter/outreach effort)</label>
+    <input type="text" name="keywords_exclude" value="{{ preferences.keywords_exclude|join(', ') }}">
+
+    <label>Ranking weights (should sum to roughly 1.0)</label>
+    <div class="row">
+      <div>title match<input type="number" step="0.01" name="w_title" value="{{ preferences.ranking_weights.title_match }}"></div>
+      <div>company match<input type="number" step="0.01" name="w_company" value="{{ preferences.ranking_weights.company_match }}"></div>
+      <div>location match<input type="number" step="0.01" name="w_location" value="{{ preferences.ranking_weights.location_match }}"></div>
+      <div>keyword boost<input type="number" step="0.01" name="w_keyword" value="{{ preferences.ranking_weights.keyword_boost }}"></div>
+      <div>recency<input type="number" step="0.01" name="w_recency" value="{{ preferences.ranking_weights.recency }}"></div>
+    </div>
+    <button type="submit" style="margin-top:12px;">Save preferences</button>
+  </form>
+</div>
+{% endblock %}

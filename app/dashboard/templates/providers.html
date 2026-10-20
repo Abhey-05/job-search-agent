@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Provider configuration &amp; integration health</h2>
+
+<div class="card">
+  <h3 style="margin-top:0;">Contact lookup provider</h3>
+  <p class="muted">
+    Active: <strong>{{ health.contact_provider }}</strong> &middot;
+    Configured: <strong>{{ 'yes' if health.contact_configured else 'no (falls back to mock)' }}</strong>
+  </p>
+  <pre>{{ health.contact_usage | tojson(indent=2) }}</pre>
+  <form method="post" action="/providers">
+    <label>Provider</label>
+    <select name="enabled_provider">
+      <option value="" {% if not contacts.enabled_provider %}selected{% endif %}>None (mock -- clearly-labeled fake data)</option>
+      <option value="contactout" {% if contacts.enabled_provider == 'contactout' %}selected{% endif %}>ContactOut (requires CONTACTOUT_API_KEY env var)</option>
+      <option value="signalhire" {% if contacts.enabled_provider == 'signalhire' %}selected{% endif %}>SignalHire (requires SIGNALHIRE_API_KEY env var)</option>
+    </select>
+    <div class="muted" style="margin-top:6px;">See docs/INTEGRATIONS.md for exactly what's tested vs. untested for each.</div>
+
+    <h3>Email sending provider</h3>
+    <label>Provider</label>
+    <select name="email_provider">
+      <option value="mock" {% if email.provider == 'mock' %}selected{% endif %}>Mock (records a fake "sent" id, never delivers)</option>
+      <option value="gmail" {% if email.provider == 'gmail' %}selected{% endif %}>Gmail (requires OAuth setup -- see docs/INTEGRATIONS.md)</option>
+    </select>
+    <div class="row">
+      <div><label>From name</label><input type="text" name="from_name" value="{{ email.from_name }}"></div>
+      <div><label>From email</label><input type="text" name="from_email" value="{{ email.from_email }}"></div>
+    </div>
+    <button type="submit" style="margin-top:12px;">Save provider settings</button>
+  </form>
+</div>
+{% endblock %}

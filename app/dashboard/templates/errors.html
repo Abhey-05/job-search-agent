@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Errors needing attention</h2>
+
+<div class="card">
+  <h3 style="margin-top:0;">Failed email sends</h3>
+  {% if failed_emails %}
+  <table>
+    <tr><th>ID</th><th>Job</th><th>Subject</th></tr>
+    {% for e in failed_emails %}<tr><td>{{ e['id'] }}</td><td>{{ e['job_id'] }}</td><td>{{ e['subject'] }}</td></tr>{% endfor %}
+  </table>
+  {% else %}<p class="muted">None.</p>{% endif %}
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0;">Failed applications</h3>
+  {% if failed_apps %}
+  <table>
+    <tr><th>ID</th><th>Job</th><th>Notes</th></tr>
+    {% for a in failed_apps %}<tr><td>{{ a['id'] }}</td><td>{{ a['job_id'] }}</td><td>{{ a['notes'] }}</td></tr>{% endfor %}
+  </table>
+  {% else %}<p class="muted">None.</p>{% endif %}
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0;">Recent failure activity</h3>
+  {% if activity %}
+  <table>
+    <tr><th>When</th><th>Entity</th><th>Action</th><th>Detail</th></tr>
+    {% for a in activity %}
+    <tr><td class="muted">{{ a['created_at'] }}</td><td>{{ a['entity_type'] }} {{ a['entity_id'] }}</td><td>{{ a['action'] }}</td><td class="muted">{{ a['detail'] }}</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="muted">None recorded.</p>{% endif %}
+</div>
+{% endblock %}

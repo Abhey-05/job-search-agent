@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Profile</h2>
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+<div class="card">
+  <h3 style="margin-top:0;">Resume</h3>
+  <p class="muted">Stored in the database (not on local disk) so it survives redeploys and is
+    visible to both the dashboard and the scheduled worker.</p>
+  <form method="post" action="/profile" enctype="multipart/form-data">
+    <input type="file" name="resume_file" accept=".pdf,.txt,.md">
+    <div class="muted" style="margin-top:6px;">Uploading here replaces nothing -- it just adds a new
+      version; the most recently uploaded one is what the pipeline uses.</div>
+    <button type="submit" style="margin-top:10px;">Upload resume</button>
+  </form>
+  {% if resumes %}
+  <table style="margin-top:14px;">
+    <tr><th>Filename</th><th>Uploaded</th><th>Extracted text length</th></tr>
+    {% for r in resumes %}
+    <tr><td>{{ r['filename'] }}</td><td class="muted">{{ r['uploaded_at'] }}</td><td>{{ r['text_len'] }} chars</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">No resume uploaded yet.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0;">Identity &amp; summary</h3>
+  <form method="post" action="/profile">
+    <div class="row">
+      <div><label>Full name</label><input type="text" name="full_name" value="{{ profile.full_name }}"></div>
+      <div><label>Email</label><input type="text" name="email" value="{{ profile.email }}"></div>
+    </div>
+    <div class="row">
+      <div><label>Phone</label><input type="text" name="phone" value="{{ profile.phone }}"></div>
+      <div><label>Location</label><input type="text" name="location" value="{{ profile.location }}"></div>
+    </div>
+    <label>Headline</label><input type="text" name="headline" value="{{ profile.headline }}">
+    <label>Summary (used verbatim in recruiter emails -- keep it true)</label>
+    <textarea name="summary" rows="4">{{ profile.summary }}</textarea>
+    <label>Skills (comma-separated)</label>
+    <input type="text" name="skills" value="{{ profile.skills|join(', ') }}">
+    <div class="row">
+      <div><label>LinkedIn</label><input type="text" name="linkedin" value="{{ profile.links.linkedin }}"></div>
+      <div><label>Portfolio</label><input type="text" name="portfolio" value="{{ profile.links.portfolio }}"></div>
+      <div><label>GitHub</label><input type="text" name="github" value="{{ profile.links.github }}"></div>
+    </div>
+    <label>Advanced: education / experience / projects / leadership / achievements (JSON, optional)</label>
+    <textarea name="advanced_json" rows="8" placeholder='{"education": [...], "experience": [...]}'></textarea>
+    <div class="muted">Leave blank to keep the current values unchanged. Current values:</div>
+    <pre>{{ {"education": profile.get("education"), "experience": profile.get("experience"), "projects": profile.get("projects"), "leadership": profile.get("leadership"), "achievements": profile.get("achievements")} | tojson(indent=2) }}</pre>
+    <button type="submit" style="margin-top:12px;">Save profile</button>
+  </form>
+</div>
+{% endblock %}

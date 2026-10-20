@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Jobs &amp; execution queue</h2>
+
+{% for item in items %}
+{% set job = item.job %}
+<div class="card">
+  <div style="display:flex; justify-content:space-between;">
+    <div>
+      <strong>{{ job['title'] }}</strong> at <strong>{{ job['company'] }}</strong>
+      {% if job['is_sample'] %}<span class="tag sample">SAMPLE</span>{% endif %}
+      <div class="muted">{{ job['location'] }} &middot; source: {{ job['source'] }} &middot;
+        <a href="{{ job['url'] }}" target="_blank">original posting</a>
+      </div>
+    </div>
+    <div style="text-align:right;">
+      <div><strong>{{ '%.2f'|format(job['rank_score']) if job['rank_score'] is not none else 'n/a' }}</strong></div>
+      <div class="muted">rank score</div>
+    </div>
+  </div>
+
+  {% if job['rank_explanation'] %}
+  <details style="margin-top:8px;">
+    <summary class="muted">Ranking explanation</summary>
+    <pre>{{ job['rank_explanation'] }}</pre>
+  </details>
+  {% endif %}
+
+  <div style="margin-top:10px;">
+    <strong>Recruiter / contact</strong>
+    {% if item.recruiters %}
+      {% for recruiter, contact in item.recruiters %}
+      <div class="muted">
+        [{{ recruiter['relationship'] }}, confidence {{ '%.2f'|format(recruiter['confidence']) }}]
+        {{ recruiter['name'] or recruiter['title'] or 'Unnamed' }}
+        &mdash; {{ recruiter['evidence_note'] }}
+        {% if contact %}
+          <br>Contact: {{ contact['email'] or '(no email found)' }}
+          [{{ contact['email_status'] }}] via {{ contact['provider'] }}
+        {% else %}
+          <br>No contact looked up yet.
+        {% endif %}
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="muted">No recruiter identified for this opening yet.</div>
+    {% endif %}
+  </div>
+
+  {% if item.application %}
+  <div style="margin-top:10px;">
+    <strong>Application</strong>
+    <span class="tag">{{ item.application['status'] }}</span>
+    {% if item.application['resume_text'] %}
+      <div class="muted">
+        <a href="/applications/{{ item.application['id'] }}/resume.md" target="_blank">tailored resume</a>
+        &middot;
+        <a href="/applications/{{ item.application['id'] }}/responses.md" target="_blank">application responses</a>
+      </div>
+    {% endif %}
+    {% if item.application['follow_up_date'] %}
+      <div class="muted">Follow up by: {{ item.application['follow_up_date'] }}</div>
+    {% endif %}
+    {% if item.application['status'] in ('prepared', 'pending_approval') %}
+    <form class="inline" method="post" action="/applications/{{ item.application['id'] }}/approve">
+      <button type="submit">Approve</button>
+    </form>
+    <form class="inline" method="post" action="/applications/{{ item.application['id'] }}/reject">
+      <button type="submit" class="secondary">Reject</button>
+    </form>
+    {% elif item.application['status'] == 'approved' %}
+    <form class="inline" method="post" action="/applications/{{ item.application['id'] }}/mark-submitted">
+      <button type="submit">Mark as manually submitted</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if item.email_draft %}
+  <div style="margin-top:10px;">
+    <strong>Email draft</strong>
+    <span class="tag">{{ item.email_draft['status'] }}</span>
+    <div class="muted">To: {{ item.email_draft['to_email'] or '(no verified recipient yet)' }}</div>
+    <details>
+      <summary class="muted">Subject: {{ item.email_draft['subject'] }}</summary>
+      <pre>{{ item.email_draft['body'] }}</pre>
+    </details>
+    {% if item.email_draft['status'] in ('pending_approval', 'draft') and item.email_draft['to_email'] %}
+    <form class="inline" method="post" action="/emails/{{ item.email_draft['id'] }}/approve">
+      <button type="submit">Approve &amp; send</button>
+    </form>
+    <form class="inline" method="post" action="/emails/{{ item.email_draft['id'] }}/reject">
+      <button type="submit" class="secondary">Reject</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% else %}
+<p class="muted">No jobs yet -- run the pipeline first.</p>
+{% endfor %}
+{% endblock %}

@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+data/
+.env
+*.egg-info/
+.pytest_cache/
+
+# Never commit the real resume -- it's ingested into the database via
+# `python -m app import-resume` or the dashboard upload form, not tracked in git.
+*.pdf

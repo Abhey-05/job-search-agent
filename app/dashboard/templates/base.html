@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Job Search Agent{% block title_suffix %}{% endblock %}</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; margin: 0; background: #f6f7f9; color: #1a1d23; }
+  header { background: #1a1d23; color: #fff; padding: 14px 24px; display: flex; align-items: center; gap: 20px; }
+  header a { color: #cfd6e4; text-decoration: none; margin-right: 14px; }
+  header a:hover { color: #fff; }
+  .badge { padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+  .badge.mode-research_only { background: #2563eb; color: #fff; }
+  .badge.mode-approval_required { background: #ca8a04; color: #fff; }
+  .badge.mode-rules_based { background: #dc2626; color: #fff; }
+  .badge.paused { background: #6b7280; color: #fff; margin-left: 8px; }
+  main { padding: 24px; max-width: 1100px; margin: 0 auto; }
+  .card { background: #fff; border: 1px solid #e3e6ea; border-radius: 10px; padding: 16px 20px; margin-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+  .stat { background: #fff; border: 1px solid #e3e6ea; border-radius: 10px; padding: 14px; text-align: center; }
+  .stat .n { font-size: 26px; font-weight: 700; }
+  .stat .label { font-size: 12px; color: #6b7280; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eee; vertical-align: top; }
+  .tag { display: inline-block; font-size: 11px; padding: 2px 7px; border-radius: 8px; background: #eef2ff; color: #3730a3; }
+  .tag.sample { background: #fef3c7; color: #92400e; }
+  .muted { color: #6b7280; font-size: 13px; }
+  button, .btn { background: #1a1d23; color: #fff; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 13px; }
+  button.secondary { background: #fff; color: #1a1d23; border: 1px solid #c7ccd4; }
+  button.danger { background: #dc2626; }
+  form.inline { display: inline; }
+  pre { white-space: pre-wrap; background: #f3f4f6; padding: 10px; border-radius: 6px; font-size: 12px; }
+  label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
+  input[type=text], input[type=number], input[type=password], input[type=file], textarea, select {
+    width: 100%; box-sizing: border-box; padding: 7px 9px; border: 1px solid #c7ccd4; border-radius: 6px; font-size: 14px;
+  }
+  textarea { font-family: ui-monospace, monospace; }
+  .row { display: flex; gap: 20px; flex-wrap: wrap; }
+  .row > div { flex: 1; min-width: 200px; }
+  .checks label { display: inline-flex; align-items: center; gap: 6px; font-weight: 400; margin-right: 14px; }
+  .checks input { width: auto; }
+  .error { color: #dc2626; font-size: 13px; margin: 8px 0; }
+  .warn-banner { background: #fef3c7; border: 1px solid #f59e0b; color: #92400e; padding: 10px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; }
+</style>
+</head>
+<body>
+<header>
+  <strong>Job Search Agent</strong>
+  <a href="/">Overview</a>
+  <a href="/jobs">Jobs &amp; Queue</a>
+  <a href="/profile">Profile</a>
+  <a href="/preferences">Preferences</a>
+  <a href="/providers">Providers</a>
+  <a href="/execution">Execution</a>
+  <a href="/schedule">Schedule</a>
+  <a href="/runs">Run History</a>
+  <a href="/errors">Errors</a>
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>
