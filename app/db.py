@@ -181,8 +181,20 @@ class Database:
             if self.dialect == "sqlite":
                 self.conn.execute(text("PRAGMA foreign_keys = ON"))
             for stmt in _schema_statements(self.dialect):
-                self.conn.execute(text(stmt))
-            self.conn.commit()
+                # Committed individually: Postgres's CREATE TABLE IF NOT
+                # EXISTS is check-then-create, not atomic, so under
+                # concurrent startup (several gunicorn workers booting at
+                # once) two can race and one gets an "already exists"
+                # error despite the guard -- harmless, the table/index
+                # exists either way, but it must not roll back any
+                # already-committed statements from earlier in this loop.
+                try:
+                    self.conn.execute(text(stmt))
+                    self.conn.commit()
+                except Exception as e:
+                    self.conn.rollback()
+                    if "already exists" not in str(e).lower():
+                        raise
             _SCHEMA_INITIALIZED.add(database_url)
 
     def close(self):
@@ -511,6 +523,27 @@ class Database:
 
     def set_paused(self, paused: bool):
         self.set_state("paused", "true" if paused else "false")
+
+    # --------------------------------------------------------- linkedin oauth
+    def set_oauth_state(self, provider: str, value: str):
+        self.set_state(f"oauth_state:{provider}", value)
+
+    def pop_oauth_state(self, provider: str) -> Optional[str]:
+        """One-shot read: returns the stored CSRF state and clears it
+        immediately, so a replayed callback can never validate twice."""
+        value = self.get_state(f"oauth_state:{provider}")
+        self.set_state(f"oauth_state:{provider}", "")
+        return value or None
+
+    def get_linkedin_connection(self) -> Optional[dict]:
+        raw = self.get_state("linkedin_connection")
+        return json.loads(raw) if raw else None
+
+    def set_linkedin_connection(self, connection: dict):
+        self.set_state("linkedin_connection", json.dumps(connection))
+
+    def clear_linkedin_connection(self):
+        self.set_state("linkedin_connection", "")
 
     # ------------------------------------------------------------- dashboard
     def dashboard_snapshot(self) -> dict:

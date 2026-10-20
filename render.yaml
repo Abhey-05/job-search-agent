@@ -1,16 +1,27 @@
-# Render Blueprint. Creates the managed Postgres database and the
-# dashboard web service in one pass ("New + -> Blueprint" in the Render
-# dashboard, pointed at this repo).
+# Render Blueprint. Creates the managed Postgres database, the dashboard
+# web service, and the scheduled cron run in one pass ("New + -> Blueprint"
+# in the Render dashboard, pointed at this repo).
 #
-# NOT included here: the scheduled run. Render's Cron Job schedule field
-# is dashboard-only (not confirmed to be Blueprint-configurable as of this
-# writing) -- create it manually as a second service after this Blueprint
-# runs: a Cron Job with command `python -m app run` and the UTC cron
-# expression shown on the dashboard's /schedule page. See docs/DEPLOYMENT.md.
+# Verified against Render's official Blueprint spec (render.com/docs/blueprint-spec):
+# `type: cron` with a direct `schedule` field is real and documented --
+# an earlier version of this file assumed it wasn't and left the cron job
+# out; that assumption was wrong and has been corrected.
+#
+# The schedule below (`30 2 * * 1,3,5`) is the UTC equivalent of this app's
+# default Mon/Wed/Fri 08:00 Asia/Kolkata schedule (computed by
+# app/schedule_utils.py -- confirm it still matches via the dashboard's
+# /schedule page). If you change the schedule in the dashboard, you must
+# also update this file and redeploy -- Render's cron schedule is a
+# deploy-time value, not read dynamically from the app's database.
 #
 # Nothing here provisions anything until you import this Blueprint in your
-# own Render account and approve the plan it shows you (including the
-# Postgres cost after its 30-day free trial).
+# own Render account. Render's import screen shows you the exact resources
+# and their real, current cost BEFORE creating anything -- review and
+# approve that screen yourself. Estimated as of this writing (confirm
+# against that screen, not this comment): web service free; Postgres free
+# for 30 days then ~$6/mo (256MB tier); cron job billbilled per execution-
+# minute plus a small per-service minimum, on the order of ~$1/mo for a
+# few-minutes-a-week job.
 
 databases:
   - name: job-search-agent-db
@@ -42,6 +53,37 @@ services:
         sync: false
       - key: FLASK_SECRET_KEY
         sync: false
+      - key: GMAIL_CLIENT_ID
+        sync: false
+      - key: GMAIL_CLIENT_SECRET
+        sync: false
+      - key: GMAIL_REFRESH_TOKEN
+        sync: false
+      # LinkedIn Sign-In (OpenID Connect) -- optional. Profile/email autofill
+      # only; NOT job search, messaging, or Easy Apply (LinkedIn does not
+      # offer those via self-serve API access). See docs/INTEGRATIONS.md.
+      - key: LINKEDIN_CLIENT_ID
+        sync: false
+      - key: LINKEDIN_CLIENT_SECRET
+        sync: false
+      - key: LINKEDIN_REDIRECT_URI
+        sync: false
+
+  - type: cron
+    name: job-search-agent-scheduled-run
+    runtime: python
+    schedule: "30 2 * * 1,3,5"
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python -m app run"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: job-search-agent-db
+          property: connectionString
+      - key: FLASK_ENV
+        value: production
+      - key: PYTHON_VERSION
+        value: "3.12"
       - key: GMAIL_CLIENT_ID
         sync: false
       - key: GMAIL_CLIENT_SECRET

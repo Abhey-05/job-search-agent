@@ -53,4 +53,38 @@
     <button type="submit" style="margin-top:12px;">Save profile</button>
   </form>
 </div>
+
+<div class="card">
+  <h3 style="margin-top:0;">LinkedIn sign-in</h3>
+  <p class="muted">
+    This only retrieves your name and email from LinkedIn to save you typing them in --
+    nothing more. LinkedIn does not offer job search, messaging, or Easy Apply through
+    self-serve API access, so this app does not and cannot claim those. The
+    <a href="/discover">LinkedIn search</a> and <a href="/import">manual import</a>
+    workflow is unaffected either way.
+  </p>
+  {% if not linkedin_configured %}
+    <p class="muted">Not configured -- set <code>LINKEDIN_CLIENT_ID</code>,
+      <code>LINKEDIN_CLIENT_SECRET</code>, and <code>LINKEDIN_REDIRECT_URI</code>
+      to enable this. See docs/INTEGRATIONS.md for exact setup steps.</p>
+  {% elif linkedin_connection and not linkedin_expired %}
+    <p>Connected as <strong>{{ linkedin_connection.name or '(name not returned)' }}</strong>
+      {% if linkedin_connection.email %}({{ linkedin_connection.email }}){% endif %}.
+      <span class="muted">Scope: {{ linkedin_connection.scope }}.</span></p>
+    <form class="inline" method="post" action="/profile/apply-linkedin-identity">
+      <button type="submit">Copy name/email into my profile above</button>
+    </form>
+    <form class="inline" method="post" action="/auth/linkedin/disconnect">
+      <button type="submit" class="secondary">Disconnect</button>
+    </form>
+  {% elif linkedin_connection and linkedin_expired %}
+    <p class="muted">Your previous connection expired (LinkedIn access tokens last 60 days).</p>
+    <a href="/auth/linkedin/connect" class="btn">Reconnect LinkedIn</a>
+    <form class="inline" method="post" action="/auth/linkedin/disconnect">
+      <button type="submit" class="secondary">Forget it</button>
+    </form>
+  {% else %}
+    <a href="/auth/linkedin/connect" class="btn">Connect LinkedIn</a>
+  {% endif %}
+</div>
 {% endblock %}

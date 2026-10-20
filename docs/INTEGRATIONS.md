@@ -54,6 +54,89 @@ isn't resolvable without LinkedIn API/scraping access, so "target
 company" in the discover form is folded into the keyword text instead --
 a bias, not a strict filter.
 
+### LinkedIn OAuth / Sign-In -- audited 2026-10-21, built, UNTESTED
+
+**What's actually available.** Reviewed LinkedIn's official developer
+docs (learn.microsoft.com/en-us/linkedin/shared/authentication/getting-access
+and the OpenID Connect / 3-legged OAuth pages). LinkedIn's API access is
+split into Open Permissions (self-serve, no approval) and everything
+else (requires a formal partner application):
+
+| Tier | Products | Approval needed? |
+|---|---|---|
+| Open (self-serve) | Sign in with LinkedIn using OpenID Connect (`openid`, `profile`, `email`); Share on LinkedIn (`w_member_social`) | No |
+| Talent Solutions | Recruiter System Connect, Apply Connect, Apply with LinkedIn, Premium Job Posting | Yes -- formal ATS-partner application, business-to-business, not available to an individual developer |
+| Marketing / Sales | Advertising API, Sales Navigator (SNAP) | Yes -- partner approval |
+| Compliance | r_compliance, w_compliance | Closed, not requestable |
+
+**Conclusion: job search, job-posting data, messaging, and Easy Apply
+are not available through self-serve LinkedIn API access at all** --
+they all live under Talent Solutions, gated behind a partner program
+this app (and an individual developer) cannot apply to. This was
+assumed going in and the official docs confirm it; nothing was skipped
+or missed.
+
+**What is available and genuinely useful:** "Sign in with LinkedIn using
+OpenID Connect" -- `openid profile email` scope, self-serve, auto-granted
+on creating a Developer app. It returns the member's name, email, and
+profile picture. Nothing else. `w_member_social` (posting/commenting on
+the member's feed) was deliberately NOT requested -- it doesn't serve a
+private job-search/outreach use case and would be an unused, unnecessary
+permission to hold.
+
+**Implementation** (`app/linkedin_oauth.py`, routes in
+`app/dashboard/server.py` under `/auth/linkedin/*`): the standard 3-legged
+OAuth 2.0 authorization-code flow against LinkedIn's real, documented
+endpoints --
+  - `GET https://www.linkedin.com/oauth/v2/authorization` (redirect the user here)
+  - `POST https://www.linkedin.com/oauth/v2/accessToken` (exchange code for token)
+  - `GET https://api.linkedin.com/v2/userinfo` (fetch name/email)
+
+Security properties: a random CSRF `state` value is generated per
+connect attempt, stored server-side (DB `app_state`, not a cookie --
+robust across multiple gunicorn workers), and consumed exactly once on
+callback (`Database.pop_oauth_state`) -- a mismatched or replayed state
+is rejected with 401. The access token is stored in the app's own
+database (not logged, not rendered in any template -- only derived
+display fields like name/email/expiry ever reach a page), scoped to
+`openid profile email` only. A **Disconnect** button on `/profile`
+deletes the stored token immediately. LinkedIn has no token-revocation
+endpoint in the open-permissions tier, so disconnect means "this app
+forgets its copy," not "LinkedIn is notified" -- the UI says this
+explicitly rather than implying otherwise.
+
+**Feature flag:** entirely inert unless `LINKEDIN_CLIENT_ID`,
+`LINKEDIN_CLIENT_SECRET`, and `LINKEDIN_REDIRECT_URI` are all set --
+`linkedin_oauth.is_configured()` gates every route, and `/profile` shows
+"Not configured" with no button at all otherwise.
+
+**Status: built against official docs, never exercised against a real
+LinkedIn Developer app** -- no credentials were available while building
+it. Nowhere in this app does it say "LinkedIn connected" unless a real
+OAuth callback has actually completed; `/profile` reflects the real
+stored state, not an assumption.
+
+**Setup steps (yours to do -- these need your LinkedIn account):**
+1. Go to https://www.linkedin.com/developers/apps and create a new app.
+   LinkedIn's Developer Portal has historically required linking a new
+   app to a LinkedIn Company Page -- if prompted, you can create a
+   minimal one under your own name to satisfy this; it doesn't need to
+   be a real business.
+2. In the app's **Products** tab, add "Sign In with LinkedIn using
+   OpenID Connect" -- this is immediate/self-serve, no review wait.
+3. In the app's **Auth** tab, add your redirect URL, e.g.
+   `https://<your-render-service>.onrender.com/auth/linkedin/callback`
+   (or `http://localhost:8765/auth/linkedin/callback` for local testing).
+   It must be an exact, absolute HTTPS URL with no query string or `#`.
+4. Copy the Client ID and Client Secret from the Auth tab.
+5. Set `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, and
+   `LINKEDIN_REDIRECT_URI` (matching step 3 exactly) as env vars /
+   platform secrets -- **do not paste these values into chat**; set them
+   directly in `.env` (gitignored) or the platform's secret store.
+6. Visit `/profile`, click **Connect LinkedIn**, approve the consent
+   screen, and confirm it shows your real name/email back. That's the
+   only way this gets marked "working" rather than "built, untested."
+
 ### Greenhouse (public Job Board API) -- LIVE-VERIFIED 2026-10-20
 
 `GET https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs?content=true`

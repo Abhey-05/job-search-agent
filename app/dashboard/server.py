@@ -11,7 +11,7 @@ from pathlib import Path
 
 from flask import Flask, Response, redirect, render_template, request, url_for
 
-from app import actions, import_jobs, linkedin_search
+from app import actions, import_jobs, linkedin_oauth, linkedin_search
 from app.db import get_db
 from app.email_module.registry import get_email_provider
 from app.pipeline import Runner, RunSummary
@@ -48,6 +48,17 @@ def create_app() -> Flask:
     flask_app = Flask(__name__, template_folder=str(TEMPLATE_DIR))
     flask_app.config["JSON_SORT_KEYS"] = False
     flask_app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16MB, generous for a resume PDF
+
+    secret_key = os.environ.get("FLASK_SECRET_KEY")
+    if not secret_key:
+        import secrets as _secrets
+        secret_key = _secrets.token_hex(32)
+        logger.warning(
+            "FLASK_SECRET_KEY not set -- using a random key generated at process "
+            "startup. Fine for local dev; set a real, stable value in production "
+            "so sessions survive restarts and are consistent across workers."
+        )
+    flask_app.secret_key = secret_key
 
     @flask_app.before_request
     def require_auth():
@@ -205,8 +216,14 @@ def create_app() -> Flask:
         d = db()
         cfg = load_settings(d)
         resumes = d.list_resume_files()
+        connection = d.get_linkedin_connection()
         d.close()
-        return render_template("profile.html", profile=cfg.profile, resumes=resumes)
+        return render_template(
+            "profile.html", profile=cfg.profile, resumes=resumes,
+            linkedin_configured=linkedin_oauth.is_configured(),
+            linkedin_connection=connection,
+            linkedin_expired=linkedin_oauth.is_token_expired(connection) if connection else None,
+        )
 
     @flask_app.post("/profile")
     def profile_post():
@@ -235,9 +252,16 @@ def create_app() -> Flask:
                     if key in advanced:
                         profile[key] = advanced[key]
             except json.JSONDecodeError as e:
+                connection = d.get_linkedin_connection()
+                error_resumes = d.list_resume_files()
                 d.close()
-                return render_template("profile.html", profile=profile, resumes=d.list_resume_files(),
-                                        error=f"Advanced JSON is invalid: {e}")
+                return render_template(
+                    "profile.html", profile=profile, resumes=error_resumes,
+                    error=f"Advanced JSON is invalid: {e}",
+                    linkedin_configured=linkedin_oauth.is_configured(),
+                    linkedin_connection=connection,
+                    linkedin_expired=linkedin_oauth.is_token_expired(connection) if connection else None,
+                )
         save_settings_section(d, "profile", profile)
 
         uploaded = request.files.get("resume_file")
@@ -246,6 +270,85 @@ def create_app() -> Flask:
             import_resume(d, load_settings(d), filename=uploaded.filename,
                           content_type=content_type, data=uploaded.read())
 
+        d.close()
+        return redirect(url_for("profile_get"))
+
+    # --------------------------------------------------------- linkedin oauth
+    @flask_app.get("/auth/linkedin/connect")
+    def linkedin_connect():
+        if not linkedin_oauth.is_configured():
+            return (
+                "LinkedIn sign-in is not configured (LINKEDIN_CLIENT_ID / "
+                "LINKEDIN_CLIENT_SECRET / LINKEDIN_REDIRECT_URI are not all "
+                "set). See docs/INTEGRATIONS.md.", 400,
+            )
+        d = db()
+        state = linkedin_oauth.generate_state()
+        d.set_oauth_state("linkedin", state)
+        d.close()
+        return redirect(linkedin_oauth.build_authorization_url(state))
+
+    @flask_app.get("/auth/linkedin/callback")
+    def linkedin_callback():
+        if not linkedin_oauth.is_configured():
+            return "LinkedIn sign-in is not configured.", 400
+
+        d = db()
+        expected_state = d.pop_oauth_state("linkedin")
+
+        error = request.args.get("error")
+        if error:
+            d.close()
+            logger.warning("LinkedIn OAuth callback returned an error: %s", error)
+            return redirect(url_for("profile_get"))
+
+        returned_state = request.args.get("state")
+        if not expected_state or returned_state != expected_state:
+            d.close()
+            logger.warning("LinkedIn OAuth state mismatch -- rejecting callback (possible CSRF).")
+            return "Invalid state parameter -- authorization rejected.", 401
+
+        code = request.args.get("code")
+        if not code:
+            d.close()
+            return redirect(url_for("profile_get"))
+
+        try:
+            token_response = linkedin_oauth.exchange_code_for_token(code)
+            userinfo = linkedin_oauth.fetch_userinfo(token_response["access_token"])
+            connection = linkedin_oauth.build_connection_record(token_response, userinfo)
+            d.set_linkedin_connection(connection)
+            d.log_activity(None, "linkedin_oauth", None, "connected",
+                            f"scope={connection.get('scope')}")
+        except Exception as e:
+            logger.exception("LinkedIn OAuth token exchange / userinfo fetch failed")
+            d.log_activity(None, "linkedin_oauth", None, "connect_failed", str(e))
+        d.close()
+        return redirect(url_for("profile_get"))
+
+    @flask_app.post("/auth/linkedin/disconnect")
+    def linkedin_disconnect():
+        d = db()
+        d.clear_linkedin_connection()
+        d.log_activity(None, "linkedin_oauth", None, "disconnected",
+                        "Local token deleted. LinkedIn has no revocation "
+                        "endpoint in the open-permissions tier, so this "
+                        "removes this app's copy; it does not notify LinkedIn.")
+        d.close()
+        return redirect(url_for("profile_get"))
+
+    @flask_app.post("/profile/apply-linkedin-identity")
+    def apply_linkedin_identity():
+        d = db()
+        connection = d.get_linkedin_connection()
+        if connection:
+            cfg = load_settings(d)
+            profile = dict(cfg.profile)
+            if connection.get("name"):
+                profile["full_name"] = connection["name"]
+            if connection.get("email"):
+                profile["email"] = connection["email"]
+            save_settings_section(d, "profile", profile)
         d.close()
         return redirect(url_for("profile_get"))
 
